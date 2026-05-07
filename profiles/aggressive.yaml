@@ -1,0 +1,46 @@
+name: "Aggressive Pass"
+description: "Massimizza velocità di passaggio challenge accettando rischio maggiore"
+
+risk:
+  per_trade_pct: 1.5
+  max_daily_pct: 3.5         # Stop trading se -3.5% in giornata (margin vs 5% prop)
+  max_concurrent_trades: 3
+  
+targets:
+  challenge_completion_days: 8
+  daily_profit_target_pct: 1.5
+
+strategy_preferences:
+  preferred_types:
+    - "trend_following"
+    - "breakout"
+    - "momentum"
+  avoid_types:
+    - "scalping_high_freq"
+    - "grid"
+    - "martingale"
+  
+  preferred_timeframes:
+    - "M15"
+    - "H1"
+  
+  preferred_session: "london_ny_overlap"  # 13:00-17:00 UTC
+  
+trade_management:
+  use_trailing_stop: true
+  trailing_activation_pct: 0.5
+  partial_take_profit: true
+  partial_tp_levels: [0.5, 0.75]  # 50% e 75% del target
+  break_even_at_pct: 0.3
+
+filters:
+  news_block_minutes_before: 5
+  news_block_minutes_after: 5
+  max_spread_pips: 2.0
+  min_atr_pips: 8.0           # Skip se mercato troppo piatto
+  
+validation_thresholds:
+  min_profit_factor: 1.7
+  min_sharpe: 1.2
+  max_drawdown_pct: 6.5
+  min_win_rate: 0.42

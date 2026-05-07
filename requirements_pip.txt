@@ -1,0 +1,26 @@
+# Pacchetti da installare con pip dopo aver installato i conda packages
+# Uso: pip install -r requirements_pip.txt
+
+# Core
+anthropic>=0.40.0
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+
+# MT5 integration (Windows only)
+MetaTrader5>=5.0.45
+
+# Backtest analysis (opzionale, non richiesti per MVP)
+# quantstats>=0.0.62
+
+# Scheduling
+apscheduler>=3.10.4
+
+# Notifications
+python-telegram-bot>=20.7
+
+# File reading
+pypdf>=4.0.0
+python-docx>=1.1.0
+
+# OCR (opzionale, richiede tesseract installato sul sistema)
+# pytesseract>=0.3.10

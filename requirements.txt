@@ -1,0 +1,44 @@
+# Core
+anthropic>=0.40.0
+pyyaml>=6.0
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+
+# MT5 integration
+MetaTrader5>=5.0.45
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Backtest analysis
+quantstats>=0.0.62
+pyfolio-reloaded>=0.9.5
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+
+# Scheduling
+apscheduler>=3.10.4
+
+# Notifications
+python-telegram-bot>=20.7
+httpx>=0.26.0
+
+# Dashboard
+fastapi>=0.108.0
+uvicorn[standard]>=0.25.0
+jinja2>=3.1.2
+python-multipart>=0.0.6  # per file upload
+
+# Idea evaluator (file readers)
+pypdf>=4.0.0
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+pillow>=10.0.0
+# pytesseract>=0.3.10  # opzionale: per OCR immagini, richiede tesseract installato
+
+# Logging
+loguru>=0.7.2
+
+# Optional: optimization
+scikit-optimize>=0.9.0

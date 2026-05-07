@@ -1,0 +1,54 @@
+claude:
+  api_key: "sk-ant-YOUR_KEY_HERE"
+  model: "claude-sonnet-4-5"
+  max_tokens: 4096
+
+mt5:
+  login: 12345678
+  password: "YOUR_DEMO_PASSWORD"
+  server: "MetaQuotes-Demo"
+  path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+  timeout: 60000
+
+telegram:
+  enabled: true
+  bot_token: "YOUR_BOT_TOKEN"
+  chat_id: "YOUR_CHAT_ID"
+
+database:
+  url: "sqlite:///db/prop_agent.db"
+
+orchestrator:
+  cycle_hours: 4
+  max_strategies_per_cycle: 5
+  profiles_active:
+    - aggressive
+    - conservative
+  symbols:
+    - EURUSD
+    - GBPUSD
+    - XAUUSD
+    - US30
+  timeframes:
+    - M15
+    - H1
+    - H4
+
+prop:
+  target_firm: "ftmo"        # ftmo | fundednext
+  account_size: 10000
+  phase: "challenge"          # challenge | verification | funded
+
+backtest:
+  history_years: 3
+  walk_forward_splits: 5
+  initial_deposit: 10000
+  optimization_passes: 200
+
+validation_criteria:
+  min_profit_factor: 1.5
+  min_sharpe: 1.0
+  max_drawdown_pct: 7.0
+  min_trades: 50
+  min_win_rate: 0.40
+  max_consecutive_losses: 6

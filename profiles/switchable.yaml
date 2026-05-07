@@ -1,0 +1,54 @@
+name: "Switchable Adaptive"
+description: "Aggressivo fino al 50% del target prop, poi passa automaticamente a conservativo"
+
+mode: "adaptive"
+
+phases:
+  - name: "aggressive_phase"
+    trigger: "profit_pct < 50"      # Quando siamo sotto il 50% del target
+    risk:
+      per_trade_pct: 1.5
+      max_daily_pct: 3.5
+      max_concurrent_trades: 3
+    trade_management:
+      use_trailing_stop: false
+      partial_tp_levels: [0.5, 0.75]
+  
+  - name: "conservative_phase"
+    trigger: "profit_pct >= 50"     # Una volta passato il 50%, lock-in
+    risk:
+      per_trade_pct: 0.4
+      max_daily_pct: 1.0
+      max_concurrent_trades: 1
+    trade_management:
+      use_trailing_stop: true
+      trailing_activation_pct: 0.3
+      partial_tp_levels: [0.5]
+  
+  - name: "preserve_phase"
+    trigger: "profit_pct >= 90"     # Vicini al target, modalità extra-prudente
+    risk:
+      per_trade_pct: 0.2
+      max_daily_pct: 0.5
+      max_concurrent_trades: 1
+    trade_management:
+      tighten_stop_pct: 0.5         # Stop loss molto stretto
+
+strategy_preferences:
+  preferred_types:
+    - "trend_following"
+    - "breakout"
+  preferred_timeframes:
+    - "M15"
+    - "H1"
+
+filters:
+  news_block_minutes_before: 5
+  news_block_minutes_after: 5
+  max_spread_pips: 2.0
+
+validation_thresholds:
+  min_profit_factor: 1.6
+  min_sharpe: 1.3
+  max_drawdown_pct: 5.5
+  min_win_rate: 0.45

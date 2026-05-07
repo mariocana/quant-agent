@@ -72,3 +72,5 @@ $RECYCLE.BIN/
 *.lnk
 
 strategies_archive/
+config.yaml
+logs/

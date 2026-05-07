@@ -148,14 +148,29 @@ class BacktestRunner:
             set_file=set_file,
         )
         
-        ini_path = self.mt5_path.parent / "config" / f"tester_{ea_name}.ini"
-        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        # Determina la directory dati MT5 dell'utente (no Program Files = no permission issue)
+        # MT5 per default mette i file utente in %APPDATA%\MetaQuotes\Terminal\<HASH>
+        # Usiamo invece il nostro working dir per avere pieno controllo
+        work_dir = Path.cwd() / "mt5_work"
+        config_dir = work_dir / "config"
+        report_dir = work_dir / "reports"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        report_dir.mkdir(parents=True, exist_ok=True)
+        
+        ini_path = config_dir / f"tester_{ea_name}.ini"
         ini_path.write_text(ini_content, encoding="utf-16")
         
-        report_path = self.mt5_path.parent / "MQL5" / "Reports" / f"{ea_name}_report.xml"
+        # Il report XML va nella cartella standard MT5 dell'utente, non Program Files
+        # MT5 scrive .htm di default (non .xml), cerchiamo entrambe le estensioni
+        reports_dir = self._find_mt5_user_reports_dir()
+        report_candidates = [
+            reports_dir / f"{ea_name}_report.htm",
+            reports_dir / f"{ea_name}_report.html",
+            reports_dir / f"{ea_name}_report.xml",
+        ]
         
-        # Lancia MT5 in modalità tester
-        cmd = [str(self.mt5_path), f"/config:{ini_path}", "/portable"]
+        # Lancia MT5 in modalità tester usando il config esterno
+        cmd = [str(self.mt5_path), f"/config:{ini_path}"]
         logger.info(f"🚀 Launching backtest: {ea_name} on {symbol} {timeframe}")
         
         process = subprocess.Popen(cmd)
@@ -163,15 +178,41 @@ class BacktestRunner:
         # Attendi report (max 30 minuti)
         timeout = 1800
         start = time.time()
-        while not report_path.exists() and (time.time() - start) < timeout:
+        report_path = None
+        while time.time() - start < timeout:
+            for candidate in report_candidates:
+                if candidate.exists():
+                    report_path = candidate
+                    break
+            if report_path:
+                break
             time.sleep(5)
         
         process.terminate()
         
-        if not report_path.exists():
-            raise TimeoutError(f"Backtest timeout for {ea_name}")
+        if not report_path:
+            raise TimeoutError(
+                f"Backtest timeout for {ea_name}: no report found in {reports_dir}\n"
+                f"Verifica che MT5 lanci il tester correttamente con il config."
+            )
         
         return self._parse_report(report_path)
+    
+    def _find_mt5_user_reports_dir(self) -> Path:
+        """Trova la cartella Reports nell'AppData utente MT5."""
+        import os
+        appdata = Path(os.environ.get("APPDATA", ""))
+        terminals_dir = appdata / "MetaQuotes" / "Terminal"
+        if terminals_dir.exists():
+            # Cerca terminale corrente: cartella con MQL5/Reports
+            for terminal_hash in terminals_dir.iterdir():
+                reports = terminal_hash / "MQL5" / "Reports"
+                if reports.exists():
+                    return reports
+        # Fallback: cartella locale
+        local_fallback = Path.cwd() / "mt5_work" / "reports"
+        local_fallback.mkdir(parents=True, exist_ok=True)
+        return local_fallback
     
     def _build_tester_ini(self, **kwargs) -> str:
         """Costruisce il contenuto del file .ini per il tester MT5."""
@@ -200,23 +241,38 @@ ReplaceReport=1
 """
     
     def _parse_report(self, report_path: Path) -> BacktestResult:
-        """Parsa il report XML di MT5 ed estrae le metriche."""
-        # MT5 può generare report in HTML o XML; qui assumiamo XML
-        # (Implementazione semplificata — in produzione usare lxml)
-        content = report_path.read_text(encoding="utf-16", errors="ignore")
+        """Parsa il report HTML/XML di MT5 ed estrae le metriche."""
+        # Prova diverse encodings (MT5 di solito usa utf-16)
+        content = ""
+        for enc in ("utf-16", "utf-16-le", "utf-8", "cp1252", "latin1"):
+            try:
+                content = report_path.read_text(encoding=enc, errors="ignore")
+                if content and ("Total Trades" in content or "Profit Factor" in content):
+                    break
+            except Exception:
+                continue
         
-        def extract(pattern: str, default: float = 0.0) -> float:
-            match = re.search(pattern, content)
+        if not content:
+            raise ValueError(f"Cannot read report at {report_path}")
+        
+        # Strip tag HTML semplici per facilitare regex
+        clean = re.sub(r'<[^>]+>', ' ', content)
+        clean = re.sub(r'&nbsp;', ' ', clean)
+        clean = re.sub(r'\s+', ' ', clean)
+        
+        def extract(pattern: str, default: float = 0.0, source: str = None) -> float:
+            text = source if source is not None else clean
+            match = re.search(pattern, text)
             if match:
                 try:
                     return float(match.group(1).replace(" ", "").replace(",", ""))
-                except ValueError:
+                except (ValueError, IndexError):
                     return default
             return default
         
         return BacktestResult(
             initial_deposit=extract(r"Initial Deposit[:\s]+([0-9.,]+)"),
-            final_balance=extract(r"Total Net Profit[:\s]+([0-9.,]+)") + extract(r"Initial Deposit[:\s]+([0-9.,]+)"),
+            final_balance=extract(r"Total Net Profit[:\s]+(-?[0-9.,]+)") + extract(r"Initial Deposit[:\s]+([0-9.,]+)"),
             net_profit=extract(r"Total Net Profit[:\s]+(-?[0-9.,]+)"),
             profit_factor=extract(r"Profit Factor[:\s]+([0-9.,]+)"),
             sharpe_ratio=extract(r"Sharpe Ratio[:\s]+([0-9.,]+)"),

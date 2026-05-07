@@ -1,7 +1,8 @@
 """Result Analyzer — usa Claude per dare un giudizio finale qualitativo su un candidato EA."""
-from anthropic import Anthropic
 from loguru import logger
 from dataclasses import asdict
+
+from agents.api_client import make_client, call_with_retry
 
 
 SYSTEM_PROMPT = """Sei un risk officer esperto di prop firm trading. 
@@ -29,8 +30,8 @@ Sii diretto, critico, evita di essere ottimista per default. Se ci sono red flag
 
 
 class ResultAnalyzer:
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5"):
-        self.client = Anthropic(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
+        self.client = make_client(api_key, timeout_seconds=120)
         self.model = model
     
     def analyze(
@@ -78,14 +79,13 @@ Dai il tuo verdetto secondo lo schema definito."""
         
         logger.info(f"🧠 Analyzer evaluating: {strategy.get('name', '?')}")
         
-        response = self.client.messages.create(
+        analysis = call_with_retry(
+            self.client,
             model=self.model,
             max_tokens=1500,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
-        
-        analysis = response.content[0].text
         
         # Estrai verdetto
         verdict = "REVIEW"

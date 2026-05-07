@@ -7,10 +7,11 @@ Funziona come "secondo parere critico" + extractor di strategie tradabili.
 import json
 import re
 from pathlib import Path
-from anthropic import Anthropic
 from loguru import logger
 from typing import Optional
 from dataclasses import dataclass, asdict
+
+from agents.api_client import make_client, call_with_retry
 
 
 SYSTEM_PROMPT_EXTRACTOR = """Sei un analista quantitativo che estrae idee tradabili da testo discorsivo.
@@ -123,8 +124,8 @@ class IdeaEvaluation:
 
 
 class IdeaEvaluator:
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5"):
-        self.client = Anthropic(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
+        self.client = make_client(api_key, timeout_seconds=120)
         self.model = model
     
     def evaluate(
@@ -196,7 +197,8 @@ class IdeaEvaluator:
     
     def _extract_structure(self, content: str) -> dict:
         """Step 1: estrai una strategia strutturata dal testo."""
-        response = self.client.messages.create(
+        text = call_with_retry(
+            self.client,
             model=self.model,
             max_tokens=2048,
             system=SYSTEM_PROMPT_EXTRACTOR,
@@ -204,9 +206,8 @@ class IdeaEvaluator:
                 "role": "user",
                 "content": f"Analizza questo testo ed estrai l'idea tradabile:\n\n---\n{content}\n---"
             }],
-        )
+        ).strip()
         
-        text = response.content[0].text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```\w*\n?", "", text)
             text = re.sub(r"\n?```$", "", text)
@@ -256,14 +257,13 @@ CONTESTO PROP TARGET: {rules.name}
 
 Fai la tua analisi critica completa secondo lo schema definito."""
         
-        response = self.client.messages.create(
+        return call_with_retry(
+            self.client,
             model=self.model,
             max_tokens=2500,
             system=SYSTEM_PROMPT_REVIEWER,
             messages=[{"role": "user", "content": user_msg}],
         )
-        
-        return response.content[0].text
     
     def _extract_verdict(self, review: str) -> str:
         """Estrae il verdetto dalla review."""

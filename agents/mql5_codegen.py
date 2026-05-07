@@ -1,9 +1,9 @@
 """MQL5 Code Generator Agent — converte ipotesi strategia in codice .mq5 compilabile."""
 from pathlib import Path
-from anthropic import Anthropic
 from loguru import logger
 
 from prop_rules import get_rules
+from agents.api_client import make_client, call_with_retry
 
 
 SYSTEM_PROMPT = """Sei un esperto sviluppatore MQL5. Converti ipotesi di strategia in Expert Advisor .mq5 production-ready.
@@ -47,8 +47,9 @@ OUTPUT: SOLO codice MQL5 raw, senza markdown fence, senza spiegazioni prima/dopo
 
 
 class MQL5CodeGenerator:
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5"):
-        self.client = Anthropic(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
+        # Timeout esteso a 180s — la generazione MQL5 può essere lenta
+        self.client = make_client(api_key, timeout_seconds=180)
         self.model = model
     
     def generate(
@@ -105,14 +106,14 @@ Genera il codice .mq5 completo e compilabile."""
         
         logger.info(f"⚙️  CodeGen producing MQL5 for: {ea_name}")
         
-        response = self.client.messages.create(
+        # call_with_retry ritorna direttamente il testo
+        code = call_with_retry(
+            self.client,
             model=self.model,
             max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
-        )
-        
-        code = response.content[0].text.strip()
+        ).strip()
         
         # Rimuovi eventuali code fence
         if code.startswith("```"):

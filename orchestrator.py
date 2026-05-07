@@ -23,6 +23,7 @@ from agents.backtest_runner import BacktestRunner
 from agents.walk_forward import WalkForwardAnalyzer
 from agents.prop_validator import PropValidator
 from agents.result_analyzer import ResultAnalyzer
+from agents.market_scanner import MarketScanner, DEFAULT_WATCHLIST
 from notifications.telegram_bot import TelegramNotifier
 
 
@@ -43,8 +44,14 @@ class Orchestrator:
         
         # Agents
         api_key = self.config.get("claude.api_key")
-        model = self.config.get("claude.model", "claude-sonnet-4-5")
+        model = self.config.get("claude.model", "claude-sonnet-4-6")
         
+        self.scanner = MarketScanner(
+            mt5_path=self.config.get("mt5.path"),
+            mt5_login=self.config.get("mt5.login"),
+            mt5_password=self.config.get("mt5.password"),
+            mt5_server=self.config.get("mt5.server"),
+        )
         self.researcher = StrategyResearcher(api_key, model)
         self.codegen = MQL5CodeGenerator(api_key, model)
         self.backtester = BacktestRunner(
@@ -83,20 +90,41 @@ class Orchestrator:
             generated = compiled_count = backtested = candidates_found = 0
             
             profiles_active = self.config.get("orchestrator.profiles_active", ["aggressive"])
-            symbols = self.config.get("orchestrator.symbols", ["EURUSD"])
-            timeframes = self.config.get("orchestrator.timeframes", ["H1"])
             max_per_cycle = self.config.get("orchestrator.max_strategies_per_cycle", 3)
             
             prop_firm = self.config.get("prop.target_firm", "ftmo")
             prop_phase = self.config.get("prop.phase", "challenge")
             account_size = self.config.get("prop.account_size", 10000)
             
+            # === MARKET SCAN: scansiona tutti i simboli per regime detection ===
+            # La watchlist è configurabile, default include majors + indices + metals
+            watchlist_config = self.config.get("orchestrator.watchlist", None)
+            timeframes_to_scan = self.config.get("orchestrator.scan_timeframes", ["M15", "H1", "H4", "D1"])
+            
+            if watchlist_config and isinstance(watchlist_config, dict):
+                watchlist = watchlist_config
+            else:
+                watchlist = DEFAULT_WATCHLIST
+            
+            logger.info(f"📡 Scanning markets ({len(watchlist)} symbols × {len(timeframes_to_scan)} TFs)...")
+            scan_results = self.scanner.scan_all(
+                watchlist=watchlist,
+                timeframes=timeframes_to_scan,
+            )
+            
+            if not scan_results:
+                logger.warning("⚠️  Market scan returned no results — check MT5 connection")
+                market_summary = "MARKET DATA UNAVAILABLE — proceed with default assumptions"
+            else:
+                market_summary = self.scanner.get_market_summary(scan_results)
+                logger.info(f"   Best opportunity: {max(scan_results.values(), key=lambda x: x.overall_score).symbol}")
+            
             # Storico recenti per evitare duplicati
             recent_strategies = session.query(Strategy).order_by(
                 Strategy.created_at.desc()
             ).limit(20).all()
             recent_dicts = [
-                {"name": s.name, "strategy_type": s.strategy_type}
+                {"name": s.name, "strategy_type": s.strategy_type, "symbol": s.symbol, "timeframe": s.timeframe}
                 for s in recent_strategies
             ]
             
@@ -161,24 +189,25 @@ class Orchestrator:
                     logger.exception(f"Error processing user idea {idea.id}: {e}")
                     continue
             
-            # === PIPELINE per ogni combinazione profilo+simbolo+tf ===
+            # === PIPELINE per ogni profilo attivo ===
+            for profile_name in profiles_active:
                 profile = load_profile(profile_name)
                 
                 for i in range(max_per_cycle):
-                    symbol = symbols[i % len(symbols)]
-                    timeframe = timeframes[i % len(timeframes)]
-                    
                     try:
-                        # === STEP 1: Generate hypothesis ===
+                        # === STEP 1: Generate hypothesis (researcher SCEGLIE symbol+TF) ===
                         strategy_dict = self.researcher.generate(
                             profile=profile,
-                            symbol=symbol,
-                            timeframe=timeframe,
                             prop_firm=prop_firm,
                             prop_phase=prop_phase,
+                            market_summary=market_summary,
                             previous_strategies=recent_dicts,
                         )
                         generated += 1
+                        
+                        # Estrai simbolo e timeframe scelti dall'AI
+                        symbol = strategy_dict.get("selected_symbol", "EURUSD")
+                        timeframe = strategy_dict.get("selected_timeframe", "H1")
                         
                         # Salva in DB
                         strategy_db = Strategy(

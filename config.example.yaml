@@ -1,6 +1,13 @@
+# ============================================================
+# PROP AGENT SYSTEM — CONFIG (v2 — market-aware)
+# ============================================================
+# IMPORTANTE: rinomina questo file in config.yaml
+# Il sistema ora SCANSIONA il mercato e SCEGLIE da solo simbolo+TF
+# ============================================================
+
 claude:
-  api_key: "sk-ant-YOUR_KEY_HERE"
-  model: "claude-sonnet-4-5"
+  api_key: "sk-ant-YOUR_ACTUAL_KEY_HERE"
+  model: "claude-sonnet-4-6"        # corretto. NON usare claude-sonnet-4-5
   max_tokens: 4096
 
 mt5:
@@ -11,36 +18,44 @@ mt5:
   timeout: 60000
 
 telegram:
-  enabled: true
-  bot_token: "YOUR_BOT_TOKEN"
-  chat_id: "YOUR_CHAT_ID"
+  enabled: false                     # metti true solo dopo aver configurato bot
+  bot_token: ""
+  chat_id: ""
 
 database:
   url: "sqlite:///db/prop_agent.db"
 
 orchestrator:
   cycle_hours: 4
-  max_strategies_per_cycle: 5
+  max_strategies_per_cycle: 2
   profiles_active:
     - aggressive
-    - conservative
-  symbols:
-    - EURUSD
-    - GBPUSD
-    - XAUUSD
-    - US30
-  timeframes:
+    # - conservative                 # disabilita per primi test
+  
+  # ⭐ Timeframes che lo scanner valuta per ogni simbolo
+  scan_timeframes:
     - M15
     - H1
     - H4
+    - D1
+  
+  # ⭐ watchlist OPZIONALE
+  # Se omessa, usa la default (majors + indices + metals + crypto)
+  # Sintassi: { simbolo: asset_class }
+  # asset_class: forex_major | forex_cross | metal | index | crypto
+  #
+  # watchlist:
+  #   EURUSD: forex_major
+  #   XAUUSD: metal
+  #   US30: index
 
 prop:
-  target_firm: "ftmo"        # ftmo | fundednext
+  target_firm: "ftmo"
   account_size: 10000
-  phase: "challenge"          # challenge | verification | funded
+  phase: "free_trial"
 
 backtest:
-  history_years: 3
+  history_years: 2
   walk_forward_splits: 5
   initial_deposit: 10000
   optimization_passes: 200

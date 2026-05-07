@@ -1,4 +1,0 @@
-2026-05-07 10:53:51.189 | INFO     | __main__:__init__:37 - 🚀 Initializing Prop Agent Orchestrator
-2026-05-07 10:53:51.321 | SUCCESS  | __main__:__init__:69 - ✅ Orchestrator ready
-2026-05-07 10:53:51.324 | INFO     | __main__:start:402 - ⏰ Scheduler started: cycle every 4h
-2026-05-07 10:53:51.324 | INFO     | __main__:start:403 -    Press Ctrl+C to stop

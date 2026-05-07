@@ -124,12 +124,12 @@ class BacktestRunner:
         deposit: float,
         leverage: int = 100,
         params: Optional[dict] = None,
+        set_file: Optional[Path] = None,           # NUOVO: percorso a .set per modalità SPEC
     ) -> BacktestResult:
         """
         Esegue un backtest e ritorna i risultati parsati.
         
-        Implementazione: genera un file .ini di configurazione tester, lancia MT5
-        in modalità portable con quel config, attende fine backtest, parsa report XML/HTML.
+        Se set_file è fornito, viene applicato all'EA (modalità SPEC con framework).
         """
         if not MT5_AVAILABLE:
             logger.warning("MT5 not available — returning stub result")
@@ -145,6 +145,7 @@ class BacktestRunner:
             deposit=deposit,
             leverage=leverage,
             params=params or {},
+            set_file=set_file,
         )
         
         ini_path = self.mt5_path.parent / "config" / f"tester_{ea_name}.ini"
@@ -174,8 +175,13 @@ class BacktestRunner:
     
     def _build_tester_ini(self, **kwargs) -> str:
         """Costruisce il contenuto del file .ini per il tester MT5."""
+        set_file_line = ""
+        if kwargs.get("set_file"):
+            set_path = Path(kwargs["set_file"]).resolve()
+            set_file_line = f"\nExpertParameters={set_path}"
+        
         return f"""[Tester]
-Expert={kwargs['ea_name']}
+Expert={kwargs['ea_name']}{set_file_line}
 Symbol={kwargs['symbol']}
 Period={kwargs['timeframe']}
 Optimization=0

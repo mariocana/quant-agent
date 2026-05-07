@@ -18,6 +18,7 @@ from config import Config, load_profile
 from db.database import init_db, get_session_factory
 from db.models import Strategy, Backtest, Candidate, CycleLog, UserIdea
 from agents.strategy_researcher import StrategyResearcher
+from agents.spec_generator import SpecGenerator
 from agents.mql5_codegen import MQL5CodeGenerator
 from agents.backtest_runner import BacktestRunner
 from agents.walk_forward import WalkForwardAnalyzer
@@ -53,6 +54,7 @@ class Orchestrator:
             mt5_server=self.config.get("mt5.server"),
         )
         self.researcher = StrategyResearcher(api_key, model)
+        self.spec_gen = SpecGenerator(api_key, model)
         self.codegen = MQL5CodeGenerator(api_key, model)
         self.backtester = BacktestRunner(
             mt5_path=self.config.get("mt5.path"),
@@ -195,8 +197,8 @@ class Orchestrator:
                 
                 for i in range(max_per_cycle):
                     try:
-                        # === STEP 1: Generate hypothesis (researcher SCEGLIE symbol+TF) ===
-                        strategy_dict = self.researcher.generate(
+                        # === STEP 1: Spec/Custom decision via SpecGenerator ===
+                        spec = self.spec_gen.generate(
                             profile=profile,
                             prop_firm=prop_firm,
                             prop_phase=prop_phase,
@@ -205,14 +207,14 @@ class Orchestrator:
                         )
                         generated += 1
                         
-                        # Estrai simbolo e timeframe scelti dall'AI
-                        symbol = strategy_dict.get("selected_symbol", "EURUSD")
-                        timeframe = strategy_dict.get("selected_timeframe", "H1")
+                        mode = spec.get("mode", "spec")
+                        symbol = spec.get("selected_symbol", "EURUSD")
+                        timeframe = spec.get("selected_timeframe", "H1")
                         
-                        # ⭐ AGGIORNA SUBITO recent_dicts per evitare loop nello stesso ciclo
+                        # Aggiorna recent_dicts per anti-duplicate intra-ciclo
                         recent_dicts.append({
-                            "name": strategy_dict.get("name", "?"),
-                            "strategy_type": strategy_dict.get("strategy_type", "?"),
+                            "name": spec.get("name", "?"),
+                            "strategy_type": spec.get("strategy_type", "?"),
                             "symbol": symbol,
                             "timeframe": timeframe,
                         })
@@ -220,70 +222,109 @@ class Orchestrator:
                         # Salva in DB
                         strategy_db = Strategy(
                             profile=profile_name,
-                            name=strategy_dict["name"],
-                            hypothesis=strategy_dict.get("hypothesis", ""),
-                            strategy_type=strategy_dict.get("strategy_type", "unknown"),
+                            name=spec.get("name", "Unnamed"),
+                            hypothesis=spec.get("hypothesis", ""),
+                            strategy_type=spec.get("strategy_type", "unknown"),
                             symbol=symbol,
                             timeframe=timeframe,
-                            parameters=strategy_dict.get("parameters", {}),
+                            parameters=spec.get("framework_params") or spec.get("parameters", {}),
                         )
                         session.add(strategy_db)
                         session.flush()
                         
-                        # === STEP 2: Generate MQL5 code ===
-                        code, mq5_path = self.codegen.generate(
-                            strategy=strategy_dict,
-                            profile=profile,
-                            prop_firm=prop_firm,
-                            prop_phase=prop_phase,
-                            symbol=symbol,
-                            output_dir=Path("strategies_archive") / profile_name,
-                        )
-                        strategy_db.mql5_code = code
-                        strategy_db.mql5_path = str(mq5_path)
+                        # === BIFORCAZIONE in base al mode ===
+                        if mode == "spec":
+                            # ──── MODE SPEC: usa framework + .set file ────
+                            logger.info(f"   📋 SPEC mode → generating .set file (no compile needed)")
+                            
+                            ea_name = f"PA_{profile_name}_{spec['name']}_{symbol}".replace(" ", "_")[:50]
+                            ea_name = "".join(c for c in ea_name if c.isalnum() or c == "_")
+                            set_path = Path("strategies_archive") / profile_name / f"{ea_name}.set"
+                            
+                            self.spec_gen.build_set_file(spec, set_path)
+                            strategy_db.mql5_path = str(set_path)
+                            strategy_db.compiled = True   # framework è già compilato
+                            session.commit()
+                            
+                            # mq5_path per il backtest punta al framework, ma con .set
+                            mq5_path = Path("templates") / "PropAgentFramework.mq5"
+                            compiled_count += 1
                         
-                        # === STEP 3: Compile (con auto-fix retry) ===
-                        success, errors = self.backtester.compile_ea(mq5_path)
-                        
-                        # Auto-fix retry: se fallisce, manda errori a Claude e riprova
-                        if not success:
-                            logger.warning(f"⚠️  Compile failed for {strategy_dict['name']}, attempting auto-fix...")
-                            try:
-                                fixed_code = self.codegen.fix_compile_errors(
-                                    original_code=code,
-                                    compile_errors=errors,
-                                    mq5_path=mq5_path,
-                                )
-                                code = fixed_code
-                                strategy_db.mql5_code = fixed_code
-                                # Retry compile dopo fix
-                                success, errors = self.backtester.compile_ea(mq5_path)
-                                if success:
-                                    logger.success(f"✅ Auto-fix succeeded for {strategy_dict['name']}")
-                            except Exception as e:
-                                logger.error(f"   Auto-fix exception: {e}")
-                        
-                        strategy_db.compiled = success
-                        strategy_db.compile_errors = errors if not success else None
-                        session.commit()
-                        
-                        if not success:
-                            logger.warning(f"⏭  Skipping {strategy_dict['name']} (compile failed even after auto-fix)")
-                            continue
-                        compiled_count += 1
+                        else:
+                            # ──── MODE CUSTOM: codegen tradizionale ────
+                            logger.info(f"   🛠️  CUSTOM mode → generating full MQL5 (custom logic required)")
+                            
+                            # Per il codegen serve il dict in formato vecchio
+                            strategy_for_codegen = {
+                                "name": spec.get("name"),
+                                "hypothesis": spec.get("hypothesis"),
+                                "entry_logic": spec.get("entry_logic", {}),
+                                "exit_logic": spec.get("exit_logic", {}),
+                                "indicators": spec.get("indicators", []),
+                                "parameters": spec.get("parameters", {}),
+                            }
+                            
+                            code, mq5_path = self.codegen.generate(
+                                strategy=strategy_for_codegen,
+                                profile=profile,
+                                prop_firm=prop_firm,
+                                prop_phase=prop_phase,
+                                symbol=symbol,
+                                output_dir=Path("strategies_archive") / profile_name,
+                            )
+                            strategy_db.mql5_code = code
+                            strategy_db.mql5_path = str(mq5_path)
+                            
+                            # Compile con auto-fix retry
+                            success, errors = self.backtester.compile_ea(mq5_path)
+                            
+                            if not success:
+                                logger.warning(f"⚠️  Compile failed, attempting auto-fix...")
+                                try:
+                                    fixed_code = self.codegen.fix_compile_errors(
+                                        original_code=code,
+                                        compile_errors=errors,
+                                        mq5_path=mq5_path,
+                                    )
+                                    code = fixed_code
+                                    strategy_db.mql5_code = fixed_code
+                                    success, errors = self.backtester.compile_ea(mq5_path)
+                                    if success:
+                                        logger.success(f"✅ Auto-fix succeeded")
+                                except Exception as e:
+                                    logger.error(f"   Auto-fix exception: {e}")
+                            
+                            strategy_db.compiled = success
+                            strategy_db.compile_errors = errors if not success else None
+                            session.commit()
+                            
+                            if not success:
+                                logger.warning(f"⏭  Skipping {spec['name']} (compile failed even after auto-fix)")
+                                continue
+                            compiled_count += 1
                         
                         # === STEP 4: Backtest ===
                         years = self.config.get("backtest.history_years", 3)
                         date_to = datetime.utcnow()
                         date_from = date_to - timedelta(days=365 * years)
                         
+                        # In SPEC mode, l'EA è il framework e i parametri sono nel .set
+                        # In CUSTOM mode, l'EA è il file .mq5 generato e .set è None
+                        if mode == "spec":
+                            bt_ea_name = "PropAgentFramework"
+                            bt_set_file = Path(strategy_db.mql5_path)
+                        else:
+                            bt_ea_name = mq5_path.stem
+                            bt_set_file = None
+                        
                         bt_result = self.backtester.run_backtest(
-                            ea_name=mq5_path.stem,
+                            ea_name=bt_ea_name,
                             symbol=symbol,
                             timeframe=timeframe,
                             date_from=date_from,
                             date_to=date_to,
                             deposit=account_size,
+                            set_file=bt_set_file,
                         )
                         backtested += 1
                         

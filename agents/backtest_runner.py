@@ -66,7 +66,7 @@ class BacktestRunner:
             self._initialized = True
     
     def compile_ea(self, mq5_path: Path) -> tuple[bool, str]:
-        """Compila un .mq5 usando metaeditor64.exe. Ritorna (success, errors)."""
+        """Compila un .mq5 usando metaeditor64.exe. Ritorna (success, errors_text)."""
         metaeditor = self.mt5_path.parent / "metaeditor64.exe"
         if not metaeditor.exists():
             return False, f"metaeditor64.exe not found at {metaeditor}"
@@ -83,14 +83,35 @@ class BacktestRunner:
         
         # MetaEditor returns 0 on success even with warnings; check log
         if log_file.exists():
-            log_content = log_file.read_text(encoding="utf-16", errors="ignore")
-            if "0 error(s)" in log_content:
+            # Prova diverse encoding (utf-16 più comune, ma alcune versioni usano utf-8)
+            log_content = ""
+            for enc in ("utf-16", "utf-16-le", "utf-8", "cp1252"):
+                try:
+                    log_content = log_file.read_text(encoding=enc, errors="ignore")
+                    if log_content and "error" in log_content.lower():
+                        break
+                except Exception:
+                    continue
+            
+            if "0 error(s)" in log_content or "Result: 0 errors" in log_content:
                 logger.success(f"✅ Compiled: {mq5_path.with_suffix('.ex5').name}")
                 return True, log_content
             else:
-                logger.error(f"❌ Compile errors in {mq5_path.name}")
+                # Estrai e logga le righe di errore per diagnosi
+                error_lines = [
+                    line.strip() for line in log_content.split("\n")
+                    if "error" in line.lower() or ": '" in line
+                ][:15]  # max 15 righe
+                
+                logger.error(f"❌ Compile errors in {mq5_path.name}:")
+                for line in error_lines:
+                    if line:
+                        logger.error(f"   {line}")
+                
                 return False, log_content
         
+        # Fallback: nessun log file scritto
+        logger.error(f"❌ Compile failed: no log file produced")
         return result.returncode == 0, result.stdout + result.stderr
     
     def run_backtest(

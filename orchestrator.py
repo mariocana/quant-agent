@@ -209,6 +209,14 @@ class Orchestrator:
                         symbol = strategy_dict.get("selected_symbol", "EURUSD")
                         timeframe = strategy_dict.get("selected_timeframe", "H1")
                         
+                        # ⭐ AGGIORNA SUBITO recent_dicts per evitare loop nello stesso ciclo
+                        recent_dicts.append({
+                            "name": strategy_dict.get("name", "?"),
+                            "strategy_type": strategy_dict.get("strategy_type", "?"),
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                        })
+                        
                         # Salva in DB
                         strategy_db = Strategy(
                             profile=profile_name,
@@ -234,14 +242,33 @@ class Orchestrator:
                         strategy_db.mql5_code = code
                         strategy_db.mql5_path = str(mq5_path)
                         
-                        # === STEP 3: Compile ===
+                        # === STEP 3: Compile (con auto-fix retry) ===
                         success, errors = self.backtester.compile_ea(mq5_path)
+                        
+                        # Auto-fix retry: se fallisce, manda errori a Claude e riprova
+                        if not success:
+                            logger.warning(f"⚠️  Compile failed for {strategy_dict['name']}, attempting auto-fix...")
+                            try:
+                                fixed_code = self.codegen.fix_compile_errors(
+                                    original_code=code,
+                                    compile_errors=errors,
+                                    mq5_path=mq5_path,
+                                )
+                                code = fixed_code
+                                strategy_db.mql5_code = fixed_code
+                                # Retry compile dopo fix
+                                success, errors = self.backtester.compile_ea(mq5_path)
+                                if success:
+                                    logger.success(f"✅ Auto-fix succeeded for {strategy_dict['name']}")
+                            except Exception as e:
+                                logger.error(f"   Auto-fix exception: {e}")
+                        
                         strategy_db.compiled = success
                         strategy_db.compile_errors = errors if not success else None
                         session.commit()
                         
                         if not success:
-                            logger.warning(f"⏭  Skipping {strategy_dict['name']} (compile failed)")
+                            logger.warning(f"⏭  Skipping {strategy_dict['name']} (compile failed even after auto-fix)")
                             continue
                         compiled_count += 1
                         

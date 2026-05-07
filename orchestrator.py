@@ -386,20 +386,28 @@ class Orchestrator:
         finally:
             session.close()
     
-    def start(self):
-        """Avvia lo scheduler in modalità blocking."""
+    def start(self, run_now: bool = True):
+        """Avvia lo scheduler in modalità blocking.
+        
+        Args:
+            run_now: se True, esegue subito il primo ciclo prima di schedulare i successivi.
+        """
         cycle_hours = self.config.get("orchestrator.cycle_hours", 4)
         
+        # Usa datetime.now() (locale) invece di utcnow() per evitare problemi timezone
         scheduler = BlockingScheduler()
         scheduler.add_job(
             self.run_cycle,
             "interval",
             hours=cycle_hours,
-            next_run_time=datetime.utcnow() + timedelta(seconds=5),
+            next_run_time=datetime.now() + timedelta(seconds=5 if run_now else cycle_hours * 3600),
             id="main_cycle",
+            misfire_grace_time=300,  # tollera fino a 5 min di ritardo
         )
         
         logger.info(f"⏰ Scheduler started: cycle every {cycle_hours}h")
+        if run_now:
+            logger.info(f"   First cycle starts in 5 seconds")
         logger.info("   Press Ctrl+C to stop")
         
         try:
@@ -410,9 +418,28 @@ class Orchestrator:
 
 
 def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    config_path = "config.yaml"
+    run_now = True
+    
+    # Parsing argomenti semplice
+    args = sys.argv[1:]
+    if "--no-immediate" in args:
+        run_now = False
+        args.remove("--no-immediate")
+    if "--once" in args:
+        # Modalità: esegui un ciclo e basta (utile per test)
+        args.remove("--once")
+        if args:
+            config_path = args[0]
+        orchestrator = Orchestrator(config_path)
+        orchestrator.run_cycle()
+        return
+    
+    if args:
+        config_path = args[0]
+    
     orchestrator = Orchestrator(config_path)
-    orchestrator.start()
+    orchestrator.start(run_now=run_now)
 
 
 if __name__ == "__main__":

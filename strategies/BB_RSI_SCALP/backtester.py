@@ -497,10 +497,6 @@ class TradeSimulator:
             return
 
         risk_usd = self.balance * RISK["risk_per_trade_pct"] / 100
-        # Simplified lot calc: risk_usd / sl_distance_in_price
-        # For forex pairs, 1 standard lot = 100,000 units, 1 pip ≈ $10
-        lots = risk_usd / (sl_distance * 100_000)
-        lots = max(round(lots, 2), 0.01)
 
         position = {
             "symbol": symbol,
@@ -508,9 +504,9 @@ class TradeSimulator:
             "entry_price": entry,
             "sl": sl,
             "tp": tp,
-            "lots": lots,
-            "entry_time": ts,
             "risk_usd": risk_usd,
+            "sl_distance": sl_distance,
+            "entry_time": ts,
             "reason": row.get("reason", ""),
             "be_applied": False,
         }
@@ -572,12 +568,17 @@ class TradeSimulator:
     def _close_position(self, pos: dict, exit_price: float, ts, exit_reason: str):
         """Chiudi una posizione e registra il trade."""
         if pos["direction"] == "BUY":
-            pnl_pips = (exit_price - pos["entry_price"])
+            price_diff = exit_price - pos["entry_price"]
         else:
-            pnl_pips = (pos["entry_price"] - exit_price)
+            price_diff = pos["entry_price"] - exit_price
 
-        # P&L in USD (simplified: pnl_pips * lots * 100,000)
-        pnl_usd = pnl_pips * pos["lots"] * 100_000
+        # P&L based on risk: if price moved sl_distance against us = -risk_usd
+        # This works correctly for ALL asset types (forex, crypto, indices)
+        sl_distance = pos["sl_distance"]
+        if sl_distance > 0:
+            pnl_usd = (price_diff / sl_distance) * pos["risk_usd"]
+        else:
+            pnl_usd = 0
 
         self.balance += pnl_usd
 
@@ -588,7 +589,6 @@ class TradeSimulator:
         trade = {
             "symbol": pos["symbol"],
             "direction": pos["direction"],
-            "lots": pos["lots"],
             "entry_price": pos["entry_price"],
             "exit_price": exit_price,
             "sl": pos["sl"],
@@ -596,7 +596,7 @@ class TradeSimulator:
             "entry_time": pos["entry_time"],
             "exit_time": ts,
             "pnl_usd": round(pnl_usd, 2),
-            "pnl_pips": round(pnl_pips / 0.0001, 1) if pnl_pips != 0 else 0,
+            "risk_usd": round(pos["risk_usd"], 2),
             "exit_reason": exit_reason,
             "reason": pos["reason"],
             "balance_after": round(self.balance, 2),
@@ -610,10 +610,13 @@ class TradeSimulator:
     def _calc_unrealized(self, pos: dict, row) -> float:
         """Calcola P&L non realizzato di una posizione."""
         if pos["direction"] == "BUY":
-            pnl = (row["close"] - pos["entry_price"]) * pos["lots"] * 100_000
+            price_diff = row["close"] - pos["entry_price"]
         else:
-            pnl = (pos["entry_price"] - row["close"]) * pos["lots"] * 100_000
-        return pnl
+            price_diff = pos["entry_price"] - row["close"]
+        sl_distance = pos["sl_distance"]
+        if sl_distance > 0:
+            return (price_diff / sl_distance) * pos["risk_usd"]
+        return 0
 
     def _check_prop_rules(self) -> Optional[str]:
         """Controlla violazioni delle regole prop."""
@@ -769,6 +772,61 @@ def calculate_metrics(trades: list[dict], simulator: TradeSimulator) -> dict:
     }
 
 
+def print_per_symbol_report(trades: list[dict]):
+    """Stampa performance breakdown per simbolo."""
+    if not trades:
+        return
+
+    # Group trades by symbol
+    by_symbol = {}
+    for t in trades:
+        sym = t["symbol"]
+        by_symbol.setdefault(sym, []).append(t)
+
+    print(f"\n{'═' * 90}")
+    print(f"  📊 PERFORMANCE PER SIMBOLO")
+    print(f"{'═' * 90}")
+    print(f"  {'Simbolo':<14} {'Trade':>6} {'Win':>5} {'Loss':>5} {'WR%':>7} {'P&L $':>12} {'Avg Win':>10} {'Avg Loss':>10} {'PF':>6}")
+    print(f"  {'─' * 86}")
+
+    # Sort by P&L descending
+    sym_stats = []
+    for sym, sym_trades in by_symbol.items():
+        pnls = [t["pnl_usd"] for t in sym_trades]
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p <= 0]
+        total = len(pnls)
+        win_count = len(wins)
+        loss_count = len(losses)
+        wr = (win_count / total * 100) if total > 0 else 0
+        total_pnl = sum(pnls)
+        avg_win = np.mean(wins) if wins else 0
+        avg_loss = abs(np.mean(losses)) if losses else 0
+        pf = (sum(wins) / abs(sum(losses))) if losses and sum(losses) != 0 else float("inf")
+
+        sym_stats.append({
+            "symbol": sym, "trades": total, "wins": win_count, "losses": loss_count,
+            "winrate": wr, "pnl": total_pnl, "avg_win": avg_win, "avg_loss": avg_loss, "pf": pf,
+        })
+
+    sym_stats.sort(key=lambda x: x["pnl"], reverse=True)
+
+    for s in sym_stats:
+        emoji = "🟢" if s["pnl"] >= 0 else "🔴"
+        pf_str = f"{s['pf']:.2f}" if s["pf"] < 100 else "∞"
+        print(
+            f"  {emoji} {s['symbol']:<12} {s['trades']:>6} {s['wins']:>5} {s['losses']:>5} "
+            f"{s['winrate']:>6.1f}% {s['pnl']:>+11,.2f} {s['avg_win']:>+9,.2f} {-s['avg_loss']:>+9,.2f} {pf_str:>6}"
+        )
+
+    # Summary
+    profitable = sum(1 for s in sym_stats if s["pnl"] > 0)
+    losing = sum(1 for s in sym_stats if s["pnl"] <= 0)
+    print(f"  {'─' * 86}")
+    print(f"  Simboli profittevoli: {profitable}/{len(sym_stats)} | In perdita: {losing}/{len(sym_stats)}")
+    print(f"{'═' * 90}\n")
+
+
 # ════════════════════════════════════════════════════════════
 #  REPORT PRINTER
 # ════════════════════════════════════════════════════════════
@@ -887,13 +945,13 @@ def print_comparison(results: dict):
     print("  " + "─" * 68)
 
     rows = [
-        ("Trade totali", "total_trades", "d"),
+        ("Trade totali", "total_trades", ""),
         ("Winrate %", "winrate_pct", ".1f"),
-        ("P&L Totale $", "total_pnl_usd", "+,.2f"),
-        ("ROA %", "roa_pct", "+.2f"),
+        ("P&L Totale $", "total_pnl_usd", ".2f"),
+        ("ROA %", "roa_pct", ".2f"),
         ("Profit Factor", "profit_factor", ".2f"),
         ("Sharpe Ratio", "sharpe_ratio", ".2f"),
-        ("Expectancy $", "expectancy_usd", "+.2f"),
+        ("Expectancy $", "expectancy_usd", ".2f"),
         ("Max DD %", "max_drawdown_pct", ".2f"),
         ("Payoff Ratio", "payoff_ratio", ".2f"),
         ("Prop Passed", "prop_passed", ""),
@@ -904,11 +962,11 @@ def print_comparison(results: dict):
         for name, m in results.items():
             val = m.get(key, "—")
             if key == "prop_passed":
-                line += f" {'✅':>14}" if val else f" {'❌':>14}"
-            elif isinstance(val, float):
-                line += f" {val:>14{fmt}}"
+                line += f"  {'✅' if val else '❌':>14}"
+            elif isinstance(val, float) and fmt:
+                line += f"  {val:>12{fmt}}"
             else:
-                line += f" {val:>14}"
+                line += f"  {str(val):>12}"
         print(line)
 
     print("═" * 72)
@@ -938,6 +996,8 @@ def main():
                         help="Esporta trade e equity curve in CSV")
     parser.add_argument("--no-prop", action="store_true",
                         help="Ignora regole prop (test puro)")
+    parser.add_argument("--per-symbol", action="store_true",
+                        help="Mostra report dettagliato per ogni simbolo")
     parser.add_argument("--list-symbols", action="store_true",
                         help="Mostra tutti i simboli del broker e esci")
     args = parser.parse_args()
@@ -1129,6 +1189,10 @@ def main():
 
         # Print report
         print_report(metrics, strat_name, strat_symbols, ACTIVE_PROP, CURRENT_PHASE)
+
+        # Per-symbol breakdown (always shown, more detail with --per-symbol)
+        if simulator.trades:
+            print_per_symbol_report(simulator.trades)
 
         # Export CSV
         if args.export and simulator.trades:

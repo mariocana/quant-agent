@@ -938,7 +938,21 @@ def main():
                         help="Esporta trade e equity curve in CSV")
     parser.add_argument("--no-prop", action="store_true",
                         help="Ignora regole prop (test puro)")
+    parser.add_argument("--list-symbols", action="store_true",
+                        help="Mostra tutti i simboli del broker e esci")
     args = parser.parse_args()
+
+    # ── List symbols mode ──
+    if args.list_symbols:
+        logger.info("Connessione a MT5 per catalogo simboli...")
+        if not connect_mt5():
+            sys.exit(1)
+        from mt5_handler import MT5Handler
+        handler = MT5Handler()
+        handler._connected = True
+        handler.print_symbol_catalog()
+        mt5.shutdown()
+        sys.exit(0)
 
     # ── Strategies to test ──
     if args.strategy:
@@ -957,20 +971,84 @@ def main():
     if not connect_mt5():
         sys.exit(1)
 
-    # ── Preload all needed data ──
-    # Collect all symbols across strategies
-    all_symbols = set()
+    # ── Resolve symbols from broker ──
+    # Helper to resolve "AUTO" or manual list
+    def resolve_symbols(cfg_value, filters_cfg):
+        if isinstance(cfg_value, list):
+            return cfg_value
+        if cfg_value == "AUTO":
+            # Fetch all tradeable symbols from broker with filters
+            all_broker = mt5.symbols_get()
+            if not all_broker:
+                logger.error("No symbols from broker")
+                return []
+
+            results = []
+            categories = [c.lower() for c in filters_cfg.get("categories", [])]
+            spread_max = filters_cfg.get("spread_max")
+            exclude = [e.upper() for e in filters_cfg.get("exclude_contains", [])]
+
+            for sym in all_broker:
+                if filters_cfg.get("tradeable_only", True) and not sym.trade_mode:
+                    continue
+                name = sym.name.upper()
+                if any(exc in name for exc in exclude):
+                    continue
+                if spread_max is not None and sym.spread > spread_max:
+                    continue
+
+                # Category classification
+                path = (sym.path or "").lower()
+                cat = "other"
+                if "forex" in path or "fx" in path:
+                    cat = "forex"
+                elif "index" in path or "indices" in path:
+                    cat = "indices"
+                elif "commodity" in path or "metal" in path or "energy" in path:
+                    cat = "commodities"
+                elif "crypto" in path:
+                    cat = "crypto"
+                elif "stock" in path or "share" in path:
+                    cat = "stocks"
+                else:
+                    # Fallback: check known patterns
+                    forex_ccy = {"USD","EUR","GBP","JPY","CHF","AUD","NZD","CAD","SEK","NOK","HKD","SGD","TRY","ZAR","MXN"}
+                    clean = ''.join(c for c in name if c.isalpha())
+                    if len(clean) == 6 and clean[:3] in forex_ccy and clean[3:] in forex_ccy:
+                        cat = "forex"
+                    idx_names = {"US30","US100","US500","NAS100","SPX500","DJ30","DAX","GER40","UK100","JP225","AUS200","USTEC"}
+                    if any(idx in name for idx in idx_names):
+                        cat = "indices"
+                    comm_names = {"XAU","XAG","GOLD","SILVER","OIL","BRENT","WTI","NGAS","COPPER"}
+                    if any(cm in name for cm in comm_names):
+                        cat = "commodities"
+
+                if categories and cat not in categories:
+                    continue
+
+                results.append(sym.name)
+
+            logger.info(f"  AUTO resolved: {len(results)} symbols from broker")
+            return results
+        return []
+
     bb_cfg = STRATEGY.get("bb_rsi", {})
-    bb_symbols = bb_cfg.get("symbols", [])
-    general_symbols = STRATEGY["symbols"]
 
     if args.symbol:
-        all_symbols.add(args.symbol.upper())
+        # Manual override — single symbol
+        general_symbols = [args.symbol.upper()]
+        bb_symbols = [args.symbol.upper()]
     else:
-        all_symbols.update(general_symbols)
-        all_symbols.update(bb_symbols)
+        general_symbols = resolve_symbols(
+            STRATEGY.get("symbols", []),
+            STRATEGY.get("symbol_filters", {})
+        )
+        bb_symbols = resolve_symbols(
+            bb_cfg.get("symbols", "AUTO"),
+            bb_cfg.get("symbol_filters", STRATEGY.get("symbol_filters", {}))
+        )
 
-    all_symbols = sorted(all_symbols)
+    all_symbols = sorted(set(general_symbols + bb_symbols))
 
     # Determine timeframes to load
     general_tf = args.timeframe or STRATEGY["entry_timeframe"]
@@ -979,12 +1057,17 @@ def main():
     if "BB_RSI_SCALP" in strategies:
         timeframes_needed.add(scalp_tf)
 
-    logger.info(f"Caricamento dati: {', '.join(all_symbols)} | TF: {', '.join(timeframes_needed)} | {args.months} mesi")
+    logger.info(f"Caricamento dati: {len(all_symbols)} symbols | TF: {', '.join(timeframes_needed)} | {args.months} mesi")
+    logger.info(f"  General symbols: {len(general_symbols)} | BB_RSI_SCALP symbols: {len(bb_symbols)}")
+
     # data_cache keyed by (symbol, timeframe)
     data_cache = {}
     htf_cache = {}
 
-    for symbol in all_symbols:
+    for idx, symbol in enumerate(all_symbols):
+        if not mt5.symbol_select(symbol, True):
+            logger.warning(f"  Cannot select {symbol} — skipping")
+            continue
         for tf in timeframes_needed:
             df = load_candles(symbol, tf, args.months)
             if df is not None:
@@ -993,11 +1076,17 @@ def main():
         if htf is not None:
             htf_cache[symbol] = htf
 
+        # Progress log every 20 symbols
+        if (idx + 1) % 20 == 0:
+            logger.info(f"  ... loaded {idx + 1}/{len(all_symbols)} symbols")
+
     mt5.shutdown()
 
     if not data_cache:
         logger.error("Nessun dato caricato — controlla simboli e connessione MT5")
         sys.exit(1)
+
+    logger.info(f"Data loaded: {len(data_cache)} symbol/timeframe combos")
 
     # ── Run backtests ──
     all_results = {}
@@ -1013,12 +1102,12 @@ def main():
             enforce_prop=not args.no_prop,
         )
 
-        # Select symbols and timeframe for this strategy
+        # Select symbols for this strategy
         if strat_name == "BB_RSI_SCALP":
-            strat_symbols = [args.symbol.upper()] if args.symbol else bb_symbols or general_symbols
+            strat_symbols = bb_symbols
             strat_tf = scalp_tf
         else:
-            strat_symbols = [args.symbol.upper()] if args.symbol else general_symbols
+            strat_symbols = general_symbols
             strat_tf = general_tf
 
         for symbol in strat_symbols:

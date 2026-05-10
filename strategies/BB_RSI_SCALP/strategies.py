@@ -149,17 +149,45 @@ class StrategyEngine:
     def __init__(self, mt5_handler):
         self.mt5 = mt5_handler
         self.active_strategy = STRATEGY["active_strategy"]
+        self._resolved_symbols: Optional[list[str]] = None
+        self._resolved_scalp_symbols: Optional[list[str]] = None
+
+    def _resolve_symbols(self, key: str = "symbols", filters_key: str = "symbol_filters") -> list[str]:
+        """Resolve symbol list — either manual list or AUTO from broker."""
+        symbols_cfg = STRATEGY.get(key, [])
+        if isinstance(symbols_cfg, list):
+            return symbols_cfg
+        if symbols_cfg == "AUTO":
+            filters = STRATEGY.get(filters_key, {})
+            symbols = self.mt5.get_symbol_names(filters)
+            logger.info(f"AUTO symbols resolved: {len(symbols)} symbols from broker")
+            return symbols
+        return []
+
+    def _get_symbols(self) -> list[str]:
+        """Get symbols for the active strategy."""
+        if self.active_strategy == "BB_RSI_SCALP":
+            if self._resolved_scalp_symbols is None:
+                bb_cfg = STRATEGY.get("bb_rsi", {})
+                syms = bb_cfg.get("symbols", "AUTO")
+                if isinstance(syms, list):
+                    self._resolved_scalp_symbols = syms
+                elif syms == "AUTO":
+                    filters = bb_cfg.get("symbol_filters", STRATEGY.get("symbol_filters", {}))
+                    self._resolved_scalp_symbols = self.mt5.get_symbol_names(filters)
+                    logger.info(f"BB_RSI_SCALP AUTO symbols: {len(self._resolved_scalp_symbols)}")
+                else:
+                    self._resolved_scalp_symbols = self._resolve_symbols()
+            return self._resolved_scalp_symbols
+        else:
+            if self._resolved_symbols is None:
+                self._resolved_symbols = self._resolve_symbols()
+            return self._resolved_symbols
 
     def scan_for_signals(self) -> list[Signal]:
         """Scan all configured symbols for entry signals."""
         signals = []
-
-        # BB_RSI_SCALP uses its own symbol list
-        if self.active_strategy == "BB_RSI_SCALP":
-            bb_cfg = STRATEGY.get("bb_rsi", {})
-            symbols = bb_cfg.get("symbols", STRATEGY["symbols"])
-        else:
-            symbols = STRATEGY["symbols"]
+        symbols = self._get_symbols()
 
         for symbol in symbols:
             signal = self._analyze_symbol(symbol)

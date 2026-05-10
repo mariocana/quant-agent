@@ -153,12 +153,19 @@ STRATEGY = {
     # Strategy to use: "EMA_CROSS", "RSI_MEAN_REVERSION", "BREAKOUT", "BB_RSI_SCALP"
     "active_strategy": "BB_RSI_SCALP",
 
-    # Symbols to trade (CFD)
-    "symbols": [
-        "EURUSD", "GBPUSD", "USDJPY",
-        "XAUUSD",                        # Gold
-        "US30", "US100",                 # Indices
-    ],
+    # ── Symbol Selection ──
+    # "AUTO" = fetch all tradeable symbols from broker automatically
+    # list  = use a manual list (e.g. ["EURUSD", "GBPUSD"])
+    "symbols": "AUTO",
+
+    # Filters applied when symbols = "AUTO"
+    # Categories: "forex", "indices", "commodities", "crypto", "stocks"
+    "symbol_filters": {
+        "categories": ["forex", "indices", "commodities", "crypto", "stocks"],  # Which categories to trade
+        "spread_max": 50,                # Skip symbols with spread > 50 points
+        "tradeable_only": True,          # Only tradeable symbols
+        "exclude_contains": ["_"],       # Exclude symbols containing these strings
+    },
 
     # Timeframes
     "entry_timeframe": "M5",             # M5 per scalping
@@ -196,11 +203,16 @@ STRATEGY = {
         "swing_lookback": 10,            # Bars to find swing low/high for SL
         "sl_buffer_pips": 3,             # Extra pips beyond swing for SL
         "entry_timeframe": "M5",         # Scalping timeframe
-        # Symbols ottimizzati per scalping (spread bassi, alta liquidità)
-        "symbols": [
-            "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
-            "EURJPY", "GBPJPY",
-        ],
+        # "AUTO" = same as main symbols; or provide a manual list
+        "symbols": "AUTO",
+        # Filters for BB_RSI_SCALP when symbols = "AUTO"
+        # (scalping requires low spread, so we override spread_max)
+        "symbol_filters": {
+            "categories": ["forex"],     # Scalping solo su forex (spread bassi)
+            "spread_max": 25,            # Max spread più stretto per scalping
+            "tradeable_only": True,
+            "exclude_contains": ["_"],
+        },
     },
 }
 

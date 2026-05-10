@@ -1,0 +1,14 @@
+name: prop_bot
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - pandas>=2.0
+  - requests>=2.31
+  - schedule>=1.2
+  - pytz>=2023.3
+  - pip
+  - pip:
+    - MetaTrader5>=5.0.45

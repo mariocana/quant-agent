@@ -189,6 +189,8 @@ def generate_signals(
 
     # BB+RSI specific indicators
     bb_cfg = STRATEGY.get("bb_rsi", {})
+    aggro_cfg = STRATEGY.get("bb_rsi_aggro", {})
+
     if strategy_name == "BB_RSI_SCALP":
         bb_period = bb_cfg.get("bb_period", 40)
         bb_std = bb_cfg.get("bb_std_dev", 2.0)
@@ -197,6 +199,15 @@ def generate_signals(
         )
         df["rsi_scalp"] = rsi(df["close"], bb_cfg.get("rsi_period", 5))
         df["adx_val"] = adx_indicator(df, bb_cfg.get("adx_period", 14))
+
+    elif strategy_name == "BB_RSI_AGGRO":
+        bb_period = aggro_cfg.get("bb_period", 20)
+        bb_std = aggro_cfg.get("bb_std_dev", 2.0)
+        df["bb_upper"], df["bb_mid"], df["bb_lower"] = bollinger_bands(
+            df["close"], bb_period, bb_std
+        )
+        df["rsi_scalp"] = rsi(df["close"], aggro_cfg.get("rsi_period", 3))
+        df["adx_val"] = adx_indicator(df, aggro_cfg.get("adx_period", 14))
 
     # HTF trend map (nearest HTF candle per ogni entry candle)
     htf_trend = None
@@ -346,6 +357,73 @@ def generate_signals(
                     )
                     df.iloc[i, df.columns.get_loc("signal")] = signal
                     df.iloc[i, df.columns.get_loc("reason")] = reason
+                    df.iloc[i, df.columns.get_loc("sl")] = sl_val
+                    df.iloc[i, df.columns.get_loc("tp")] = tp_val
+                    continue
+
+        # ── BB_RSI_AGGRO ──
+        elif strategy_name == "BB_RSI_AGGRO":
+            adx_max = aggro_cfg.get("adx_max", 30)
+            rsi_os = aggro_cfg.get("rsi_oversold", 25)
+            rsi_ob = aggro_cfg.get("rsi_overbought", 75)
+            swing_lb = aggro_cfg.get("swing_lookback", 5)
+            sl_buffer_pips = aggro_cfg.get("sl_buffer_pips", 2)
+            min_rr = aggro_cfg.get("min_rr", 0.7)
+
+            adx_now = curr.get("adx_val", 99)
+            if pd.isna(adx_now) or adx_now > adx_max:
+                continue
+
+            bb_lower = curr.get("bb_lower", np.nan)
+            bb_upper = curr.get("bb_upper", np.nan)
+            rsi_now = curr.get("rsi_scalp", np.nan)
+            rsi_prv = prev.get("rsi_scalp", np.nan)
+
+            if pd.isna(bb_lower) or pd.isna(rsi_now) or pd.isna(rsi_prv):
+                continue
+
+            if price > 100:
+                point_est = 0.01
+            elif price > 10:
+                point_est = 0.001
+            else:
+                point_est = 0.0001
+            sl_buf = sl_buffer_pips * point_est * 10
+
+            # LONG
+            if curr["low"] <= bb_lower and rsi_prv < rsi_os and rsi_now >= rsi_os:
+                start_idx = max(0, i - swing_lb)
+                swing_low = df["low"].iloc[start_idx:i + 1].min()
+                sl_val = round(swing_low - sl_buf, 5)
+                tp_val = round(bb_upper, 5)
+
+                risk = abs(price - sl_val)
+                reward = abs(tp_val - price)
+                if risk > 0 and (reward / risk) >= min_rr:
+                    df.iloc[i, df.columns.get_loc("signal")] = "BUY"
+                    df.iloc[i, df.columns.get_loc("reason")] = (
+                        f"⚡ AGGRO BB lower + RSI({aggro_cfg.get('rsi_period', 3)}) "
+                        f"exit oversold ({rsi_prv:.1f}→{rsi_now:.1f}). ADX={adx_now:.1f}"
+                    )
+                    df.iloc[i, df.columns.get_loc("sl")] = sl_val
+                    df.iloc[i, df.columns.get_loc("tp")] = tp_val
+                    continue
+
+            # SHORT
+            if curr["high"] >= bb_upper and rsi_prv > rsi_ob and rsi_now <= rsi_ob:
+                start_idx = max(0, i - swing_lb)
+                swing_high = df["high"].iloc[start_idx:i + 1].max()
+                sl_val = round(swing_high + sl_buf, 5)
+                tp_val = round(bb_lower, 5)
+
+                risk = abs(sl_val - price)
+                reward = abs(price - tp_val)
+                if risk > 0 and (reward / risk) >= min_rr:
+                    df.iloc[i, df.columns.get_loc("signal")] = "SELL"
+                    df.iloc[i, df.columns.get_loc("reason")] = (
+                        f"⚡ AGGRO BB upper + RSI({aggro_cfg.get('rsi_period', 3)}) "
+                        f"exit overbought ({rsi_prv:.1f}→{rsi_now:.1f}). ADX={adx_now:.1f}"
+                    )
                     df.iloc[i, df.columns.get_loc("sl")] = sl_val
                     df.iloc[i, df.columns.get_loc("tp")] = tp_val
                     continue
@@ -1093,11 +1171,12 @@ def main():
         return []
 
     bb_cfg = STRATEGY.get("bb_rsi", {})
+    aggro_cfg = STRATEGY.get("bb_rsi_aggro", {})
 
     if args.symbol:
-        # Manual override — single symbol
         general_symbols = [args.symbol.upper()]
         bb_symbols = [args.symbol.upper()]
+        aggro_symbols = [args.symbol.upper()]
     else:
         general_symbols = resolve_symbols(
             STRATEGY.get("symbols", []),
@@ -1107,18 +1186,25 @@ def main():
             bb_cfg.get("symbols", "AUTO"),
             bb_cfg.get("symbol_filters", STRATEGY.get("symbol_filters", {}))
         )
+        aggro_symbols = resolve_symbols(
+            aggro_cfg.get("symbols", "AUTO"),
+            aggro_cfg.get("symbol_filters", STRATEGY.get("symbol_filters", {}))
+        )
 
-    all_symbols = sorted(set(general_symbols + bb_symbols))
+    all_symbols = sorted(set(general_symbols + bb_symbols + aggro_symbols))
 
     # Determine timeframes to load
     general_tf = args.timeframe or STRATEGY["entry_timeframe"]
     scalp_tf = bb_cfg.get("entry_timeframe", "M5")
+    aggro_tf = aggro_cfg.get("entry_timeframe", "M1")
     timeframes_needed = {general_tf}
     if "BB_RSI_SCALP" in strategies:
         timeframes_needed.add(scalp_tf)
+    if "BB_RSI_AGGRO" in strategies:
+        timeframes_needed.add(aggro_tf)
 
-    logger.info(f"Caricamento dati: {len(all_symbols)} symbols | TF: {', '.join(timeframes_needed)} | {args.months} mesi")
-    logger.info(f"  General symbols: {len(general_symbols)} | BB_RSI_SCALP symbols: {len(bb_symbols)}")
+    logger.info(f"Caricamento dati: {len(all_symbols)} symbols | TF: {', '.join(sorted(timeframes_needed))} | {args.months} mesi")
+    logger.info(f"  General: {len(general_symbols)} | BB_RSI_SCALP: {len(bb_symbols)} | BB_RSI_AGGRO: {len(aggro_symbols)}")
 
     # data_cache keyed by (symbol, timeframe)
     data_cache = {}
@@ -1166,6 +1252,9 @@ def main():
         if strat_name == "BB_RSI_SCALP":
             strat_symbols = bb_symbols
             strat_tf = scalp_tf
+        elif strat_name == "BB_RSI_AGGRO":
+            strat_symbols = aggro_symbols
+            strat_tf = aggro_tf
         else:
             strat_symbols = general_symbols
             strat_tf = general_tf

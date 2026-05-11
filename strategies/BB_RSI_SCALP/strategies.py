@@ -179,6 +179,19 @@ class StrategyEngine:
                 else:
                     self._resolved_scalp_symbols = self._resolve_symbols()
             return self._resolved_scalp_symbols
+        elif self.active_strategy == "BB_RSI_AGGRO":
+            if self._resolved_scalp_symbols is None:
+                aggro_cfg = STRATEGY.get("bb_rsi_aggro", {})
+                syms = aggro_cfg.get("symbols", "AUTO")
+                if isinstance(syms, list):
+                    self._resolved_scalp_symbols = syms
+                elif syms == "AUTO":
+                    filters = aggro_cfg.get("symbol_filters", STRATEGY.get("symbol_filters", {}))
+                    self._resolved_scalp_symbols = self.mt5.get_symbol_names(filters)
+                    logger.info(f"BB_RSI_AGGRO AUTO symbols: {len(self._resolved_scalp_symbols)}")
+                else:
+                    self._resolved_scalp_symbols = self._resolve_symbols()
+            return self._resolved_scalp_symbols
         else:
             if self._resolved_symbols is None:
                 self._resolved_symbols = self._resolve_symbols()
@@ -203,6 +216,7 @@ class StrategyEngine:
             "RSI_MEAN_REVERSION": self._strategy_rsi_reversion,
             "BREAKOUT": self._strategy_breakout,
             "BB_RSI_SCALP": self._strategy_bb_rsi_scalp,
+            "BB_RSI_AGGRO": self._strategy_bb_rsi_aggro,
         }
 
         func = strategy_map.get(self.active_strategy)
@@ -544,6 +558,97 @@ class StrategyEngine:
                 ),
                 strength=0.85,
             )
+
+        return None
+
+    # ── Strategy 5: BB + RSI AGGRO (Challenge Pass) ─────
+
+    def _strategy_bb_rsi_aggro(self, symbol: str) -> Optional[Signal]:
+        """
+        Aggressive BB+RSI scalp for challenge pass.
+        M1 timeframe, BB(20), RSI(3), ADX < 30.
+        Same logic as BB_RSI_SCALP but tuned for high frequency.
+        """
+        cfg = STRATEGY.get("bb_rsi_aggro", {})
+        tf = cfg.get("entry_timeframe", "M1")
+
+        df = self.mt5.get_candles(symbol, tf, 500)
+        if df is None or len(df) < cfg.get("bb_period", 20) + 50:
+            return None
+
+        bb = bollinger_bands(df["close"], cfg.get("bb_period", 20), cfg.get("bb_std_dev", 2.0))
+        df["bb_upper"] = bb["upper"]
+        df["bb_mid"] = bb["mid"]
+        df["bb_lower"] = bb["lower"]
+        df["rsi"] = rsi(df["close"], cfg.get("rsi_period", 3))
+        df["adx"] = adx(df, cfg.get("adx_period", 14))
+
+        curr = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        adx_val = curr["adx"]
+        if pd.isna(adx_val) or adx_val > cfg.get("adx_max", 30):
+            return None
+
+        price = curr["close"]
+        low = curr["low"]
+        high = curr["high"]
+        bb_lower = curr["bb_lower"]
+        bb_upper = curr["bb_upper"]
+        rsi_curr = curr["rsi"]
+        rsi_prev = prev["rsi"]
+
+        if pd.isna(rsi_curr) or pd.isna(bb_lower):
+            return None
+
+        swing_lb = cfg.get("swing_lookback", 5)
+        sym_info = self.mt5.get_symbol_info(symbol)
+        point = sym_info["point"] if sym_info else 0.0001
+        sl_buffer = cfg.get("sl_buffer_pips", 2) * point * 10
+        min_rr = cfg.get("min_rr", 0.7)
+
+        rsi_os = cfg.get("rsi_oversold", 25)
+        rsi_ob = cfg.get("rsi_overbought", 75)
+
+        # ── LONG ──
+        if low <= bb_lower and rsi_prev < rsi_os and rsi_curr >= rsi_os:
+            swing_low = df["low"].iloc[-swing_lb:].min()
+            sl = round(swing_low - sl_buffer, 5)
+            tp = round(bb_upper, 5)
+
+            risk = abs(price - sl)
+            reward = abs(tp - price)
+            if risk > 0 and (reward / risk) >= min_rr:
+                return Signal(
+                    symbol=symbol, direction="BUY", entry=price, sl=sl, tp=tp,
+                    strategy="BB_RSI_AGGRO",
+                    reason=(
+                        f"⚡ AGGRO BB({cfg.get('bb_period', 20)}) lower + "
+                        f"RSI({cfg.get('rsi_period', 3)}) exit oversold "
+                        f"({rsi_prev:.1f}→{rsi_curr:.1f}). ADX={adx_val:.1f}"
+                    ),
+                    strength=0.9,
+                )
+
+        # ── SHORT ──
+        if high >= bb_upper and rsi_prev > rsi_ob and rsi_curr <= rsi_ob:
+            swing_high = df["high"].iloc[-swing_lb:].max()
+            sl = round(swing_high + sl_buffer, 5)
+            tp = round(bb_lower, 5)
+
+            risk = abs(sl - price)
+            reward = abs(price - tp)
+            if risk > 0 and (reward / risk) >= min_rr:
+                return Signal(
+                    symbol=symbol, direction="SELL", entry=price, sl=sl, tp=tp,
+                    strategy="BB_RSI_AGGRO",
+                    reason=(
+                        f"⚡ AGGRO BB({cfg.get('bb_period', 20)}) upper + "
+                        f"RSI({cfg.get('rsi_period', 3)}) exit overbought "
+                        f"({rsi_prev:.1f}→{rsi_curr:.1f}). ADX={adx_val:.1f}"
+                    ),
+                    strength=0.9,
+                )
 
         return None
 

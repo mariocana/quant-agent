@@ -725,7 +725,20 @@ class TradeSimulator:
 def calculate_metrics(trades: list[dict], simulator: TradeSimulator) -> dict:
     """Calcola tutte le metriche di performance."""
     if not trades:
-        return {"error": "Nessun trade generato"}
+        return {
+            "error": "Nessun trade generato",
+            "total_trades": 0, "wins": 0, "losses": 0, "winrate_pct": 0,
+            "total_pnl_usd": 0, "roa_pct": 0, "avg_win_usd": 0, "avg_loss_usd": 0,
+            "payoff_ratio": 0, "profit_factor": 0, "expectancy_usd": 0,
+            "max_drawdown_usd": 0, "max_drawdown_pct": 0, "sharpe_ratio": 0,
+            "max_consecutive_wins": 0, "max_consecutive_losses": 0,
+            "best_trade_usd": 0, "best_trade_symbol": "N/A",
+            "worst_trade_usd": 0, "worst_trade_symbol": "N/A",
+            "exit_reasons": {}, "trading_days": 0, "prop_passed": False,
+            "prop_violation": "No trades", "min_days_met": False,
+            "target_met": False, "duration_days": 0,
+            "final_balance": simulator.initial_balance,
+        }
 
     pnls = [t["pnl_usd"] for t in trades]
     wins = [p for p in pnls if p > 0]

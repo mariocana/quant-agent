@@ -1,5 +1,5 @@
 # ============================================================
-# PROP AGENT SYSTEM — CONFIG (v2 — market-aware)
+# QUANT AGENT — CONFIG (v2 — market-aware)
 # ============================================================
 # IMPORTANTE: rinomina questo file in config.yaml
 # Il sistema ora SCANSIONA il mercato e SCEGLIE da solo simbolo+TF

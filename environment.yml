@@ -2,7 +2,7 @@
 # Crea env con: conda env create -f environment.yml
 # Aggiorna con:  conda env update -f environment.yml --prune
 
-name: propagent
+name: quantagent
 channels:
   - conda-forge
   - defaults

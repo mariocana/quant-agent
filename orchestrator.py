@@ -311,7 +311,7 @@ class Orchestrator:
                         # In SPEC mode, l'EA è il framework e i parametri sono nel .set
                         # In CUSTOM mode, l'EA è il file .mq5 generato e .set è None
                         if mode == "spec":
-                            bt_ea_name = "PropAgentFramework"
+                            bt_ea_name = "QuantAgentFramework"
                             bt_set_file = Path(strategy_db.mql5_path)
                         else:
                             bt_ea_name = mq5_path.stem

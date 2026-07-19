@@ -17,11 +17,6 @@ mt5:
   path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
   timeout: 60000
 
-telegram:
-  enabled: false                     # metti true solo dopo aver configurato bot
-  bot_token: ""
-  chat_id: ""
-
 database:
   url: "sqlite:///db/prop_agent.db"
 

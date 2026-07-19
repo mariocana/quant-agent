@@ -41,7 +41,7 @@ strumenti che già funzionano.
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  LAYER 5: HUMAN INTERFACE                                   │
-│  Dashboard web + Telegram alert                             │
+│  Dashboard web                                              │
 │  Approve/reject candidati, sottomettere idee                │
 └─────────────────────────────────────────────────────────────┘
                               ▲
@@ -285,7 +285,6 @@ Restano concettualmente identici a quelli attuali. Cambiano solo:
    
 7. Se APPROVE + compliant:
        Salva Candidate in DB
-       TelegramNotifier.send(alert)
        Dashboard mostra pending review
 ```
 

@@ -20,8 +20,7 @@ alembic>=1.13.0
 # Scheduling
 apscheduler>=3.10.4
 
-# Notifications
-python-telegram-bot>=20.7
+# HTTP client (idea evaluator: URL fetch)
 httpx>=0.26.0
 
 # Dashboard

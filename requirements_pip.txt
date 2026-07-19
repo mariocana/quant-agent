@@ -15,9 +15,6 @@ MetaTrader5>=5.0.45
 # Scheduling
 apscheduler>=3.10.4
 
-# Notifications
-python-telegram-bot>=20.7
-
 # File reading
 pypdf>=4.0.0
 python-docx>=1.1.0

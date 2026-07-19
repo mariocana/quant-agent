@@ -25,7 +25,6 @@ from agents.walk_forward import WalkForwardAnalyzer
 from agents.prop_validator import PropValidator
 from agents.result_analyzer import ResultAnalyzer
 from agents.market_scanner import MarketScanner, DEFAULT_WATCHLIST
-from notifications.telegram_bot import TelegramNotifier
 
 
 # Setup logging
@@ -66,14 +65,7 @@ class Orchestrator:
             n_splits=self.config.get("backtest.walk_forward_splits", 5),
         )
         self.analyzer = ResultAnalyzer(api_key, model)
-        
-        # Notifier
-        self.notifier = TelegramNotifier(
-            bot_token=self.config.get("telegram.bot_token", ""),
-            chat_id=self.config.get("telegram.chat_id", ""),
-            enabled=self.config.get("telegram.enabled", False),
-        )
-        
+
         self.cycle_count = 0
         logger.success("✅ Orchestrator ready")
     
@@ -435,18 +427,8 @@ class Orchestrator:
                             f"🎯 CANDIDATE: {strategy_dict['name']} | "
                             f"Score {final_validation.score}/100 | {verdict}"
                         )
-                        
-                        # === STEP 10: Notify ===
-                        self.notifier.notify_candidate(
-                            ea_name=mq5_path.stem,
-                            profile_name=profile["name"],
-                            symbol=symbol,
-                            score=final_validation.score,
-                            verdict=verdict,
-                            backtest=bt_result,
-                            wf_consistency=wf_result.consistency_score,
-                        )
-                    
+                        # Candidato salvato nel DB: visibile in dashboard (/api/candidates)
+
                     except Exception as e:
                         logger.exception(f"Error in pipeline iteration: {e}")
                         continue
@@ -468,18 +450,12 @@ class Orchestrator:
                 f"Backtested: {backtested} | Candidates: {candidates_found}\n"
                 f"{'='*60}\n"
             )
-            
-            self.notifier.notify_cycle_summary(
-                self.cycle_count, generated, compiled_count, backtested,
-                candidates_found, duration,
-            )
-        
+
         except Exception as e:
             logger.exception(f"Cycle failed: {e}")
             cycle_log.status = "failed"
             cycle_log.error_message = str(e)
             session.commit()
-            self.notifier.notify_error(str(e), "orchestrator")
         finally:
             session.close()
     

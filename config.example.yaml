@@ -84,3 +84,12 @@ validation_criteria:
   min_trades: 50
   min_win_rate: 0.40
   max_consecutive_losses: 6
+
+# Robustness gate (walk-forward + Monte Carlo) — OBBLIGATORIO per un APPROVE.
+# Un backtest promettente ma non robusto NON diventa candidate: è la difesa
+# contro l'over-ottimizzazione (l'agente prova centinaia di config e terrebbe
+# le migliori "per caso"). Soglie allineate a robustness.py ("rischio accettabile").
+robustness_gate:
+  min_wf_consistency_pct: 70      # % di finestre OOS profittevoli
+  min_mc_prop_pass_pct: 70        # % simulazioni MC che passano la challenge
+  min_mc_prob_profitable_pct: 60  # % simulazioni MC con PnL finale > 0

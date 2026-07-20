@@ -32,6 +32,20 @@ except ModuleNotFoundError:  # pragma: no cover
 
 JSON_EXPORT_PREFIX = "JSON_EXPORT:"
 
+# stderr fragments that mean "the tool refused for a DATA-SETUP reason" (missing
+# instrument spec, no data for the symbol/table, too little history for the
+# walk-forward) rather than a bug in our call. Callers use this to classify a
+# failure as "skip/retry with different data", not "the strategy is bad".
+SETUP_MARKERS = (
+    "Missing InstrumentSpec", "No data source", "Nessun dato", "Nessun dato caricato",
+    "Insufficient data", "Dati insufficienti",
+)
+
+
+def is_setup_error(err: str) -> bool:
+    """True if the error text names a known data-setup cause (see SETUP_MARKERS)."""
+    return any(m in err for m in SETUP_MARKERS)
+
 
 class ToolError(RuntimeError):
     """A tool subprocess failed, timed out, or produced no usable result."""

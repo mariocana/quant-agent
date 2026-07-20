@@ -37,13 +37,10 @@ sys.path.insert(0, str(Path(__file__).parent))  # make `adapters` importable
 from adapters import env_bridge
 from adapters.algo_framework_client import AlgoFrameworkClient
 from adapters.datasea_client import DataseaClient
-from adapters.env_bridge import ToolError
+from adapters.env_bridge import ToolError, SETUP_MARKERS, is_setup_error
 
-# stderr markers that mean "the tool refused for a data-setup reason", not a bug
-_SETUP_MARKERS = (
-    "Missing InstrumentSpec", "No data source", "Nessun dato", "Nessun dato caricato",
-    "Insufficient data", "Dati insufficienti",
-)
+# setup-error detection is shared with the runner — keep one source of truth.
+_SETUP_MARKERS = SETUP_MARKERS
 
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 _ICON = {PASS: "✅", FAIL: "❌", SKIP: "⏭️ "}
@@ -78,8 +75,7 @@ class Report:
             print("  🎉 All good — adapters work end-to-end on real data.")
 
 
-def _is_setup_error(err: str) -> bool:
-    return any(m in err for m in _SETUP_MARKERS)
+_is_setup_error = is_setup_error  # shared implementation
 
 
 def _reason(e: ToolError) -> str:

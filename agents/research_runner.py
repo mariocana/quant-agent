@@ -110,7 +110,7 @@ class ResearchRunner:
                 logger.warning(f"   robustness unavailable (setup) — verdict stays {pre.verdict} ({tag})")
                 return ExperimentOutcome(plan=plan, verdict=pre.verdict, analysis=pre,
                                          backtest=backtest, robustness=None,
-                                         ran_robustness=False, error=str(e).splitlines()[0])
+                                         ran_robustness=False, error=_tool_reason(e))
             return self._error(plan, "robustness", e, backtest=backtest)
 
         # ── 4. Full evaluation (backtest + robustness) ──
@@ -120,8 +120,16 @@ class ResearchRunner:
                                  backtest=backtest, robustness=robustness, ran_robustness=True)
 
     def _error(self, plan, stage, e: ToolError, backtest=None) -> ExperimentOutcome:
-        msg = f"{stage}: {str(e).splitlines()[0]}"
+        msg = f"{stage}: {_tool_reason(e)}"
         logger.warning(f"   ⚠️ {stage} could not run: {msg}")
         return ExperimentOutcome(plan=plan, verdict=ERROR, analysis=None,
                                  backtest=backtest, robustness=None,
                                  ran_robustness=False, error=msg)
+
+
+def _tool_reason(e: ToolError) -> str:
+    """Last meaningful line of a ToolError (the real tool error, not the wrapper)."""
+    lines = [ln.strip() for ln in str(e).splitlines() if ln.strip()]
+    meaningful = [ln for ln in lines
+                  if not ln.startswith("stderr tail") and "failed (rc=" not in ln]
+    return meaningful[-1] if meaningful else (lines[0] if lines else "unknown error")

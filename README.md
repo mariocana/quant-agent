@@ -348,6 +348,10 @@ Cose che dobbiamo decidere insieme prima di scrivere codice:
 - [ ] Se manteniamo il MarketScanner MT5 come backup o lo rimuoviamo del tutto
 - [ ] Struttura del brief testuale che passa tra i vari agent
 - [ ] Come gestiamo il caso "algo_framework crash a metà" (recovery, resume)
+- [ ] **Chat conversazionale con l'agente** (feature nuova richiesta): oggi il canale
+  idee è un *form* (`/ideas`) one-shot. Vogliamo un thread di dialogo dove l'utente
+  discute l'ipotesi con l'agente PRIMA di mandarla in pipeline (raffina, chiede
+  chiarimenti, risponde alle obiezioni del devil's advocate). Vedi §11.
 
 ---
 
@@ -405,3 +409,52 @@ Claude è forte (interpretazione, brief, decision-making) e delega dove Python
 è forte (backtest deterministico su dati reali).
 
 Questo è il pattern che i quant fund seri usano: **AI as researcher, not as coder.**
+
+---
+
+## 11. Note v4 — aggiornamento post-review del codice reale
+
+*Aggiunto dopo aver ispezionato algo_framework, datasea e il codice attuale. Rettifica
+alcune assunzioni della v3 che il codice reale ha già superato.*
+
+### 11.1 Cosa è cambiato rispetto alla v3
+
+- **Un solo conda env, non tre.** Esiste già `algo_framework/workbench-environment.yml`
+  (`name: workbench`) che unifica datasea + algo_framework. datasea è pip-installato
+  come package (`pip install -e . --no-deps`), algo_framework gira dalla sua cartella.
+  → L'`EnvBridge` cross-env della v3 è **overkill**: serve solo lanciare subprocess con
+  `cwd=algo_framework` e `PYTHONIOENCODING=utf-8`. Rischio R7 e R1 decadono.
+- **Il backtester legge datasea gold direttamente.** `backtester.py --datasea <ROOT>
+  --datasea-table <t> --tf <tf>` legge Delta gold con spread reale e traduce i TF
+  (`5m`↔`M5`). → Il "ponte delta→CSV" non serve.
+- **`workbench.py` è già il prototipo manuale dell'agente.** Ha `scan_gold()` (inventory
+  dati = `DataseaClient.list_available`), `list_strategies()` (registry discovery) e
+  `/api/run` che orchestra `backtester.py`/`robustness.py` via
+  `asyncio.create_subprocess_exec` con flag corretti, streaming e fix encoding Windows
+  (R3 già mitigato lì). → Gli adapter Layer 2 vanno **copiati da workbench.py**, non
+  reinventati.
+
+### 11.2 Contratti da aggiungere (branch separati su algo_framework — bloccanti)
+
+- **`--export-json`**: oggi backtester/robustness stampano il dict `metrics` a console e
+  `--export` salva solo trades/equity CSV. L'agente ha bisogno del **summary in JSON**
+  (Sharpe, PF, max DD, WF-consistency, MC-prop-pass). Il dict esiste già → banale.
+- **`--params`**: override parametri da CLI per gli sweep del `StrategyResearcher`.
+  `StrategyRegistry.get(config=dict)` accetta già il dict → manca solo il flag CLI.
+
+### 11.3 Feature nuova: chat conversazionale con l'agente
+
+Oggi `/ideas` è un form one-shot (sottometti → critica → approva). Vogliamo in più un
+**thread di dialogo**: l'utente discute l'ipotesi con l'agente, l'agente fa domande e
+devil's advocate in modo interattivo, e solo a valle si genera lo `structured_strategy`
+che entra in pipeline. Da progettare:
+- endpoint chat sulla dashboard (storia messaggi per sessione idea);
+- l'agente mantiene il context dell'idea in sviluppo;
+- "commit" esplicito → produce lo stesso `structured_strategy` che oggi esce dal form.
+*L'esperienza a form resta come scorciatoia; la chat è il canale ricco.*
+
+### 11.4 Guardrail prioritario
+
+Il rischio più concreto è R5 (l'agente riempie `strategies/ai_generated/` di roba
+sovra-ottimizzata). La `robustness.py` (WF + Monte Carlo) va resa **gate obbligatorio**
+prima di promuovere a candidate, non un report opzionale.

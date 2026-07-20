@@ -32,6 +32,7 @@ class ExperimentPlan:
     strategy: str
     symbol: Optional[str] = None
     timeframe: Optional[str] = None
+    table: Optional[str] = None       # datasea gold table the symbol lives in
     params: Optional[dict] = None
     monte_carlo: int = 1000
     wf_train: int = 6
@@ -82,7 +83,7 @@ class ResearchRunner:
         try:
             backtest = self.algo.run_backtest(
                 plan.strategy, symbol=plan.symbol, timeframe=plan.timeframe,
-                params=plan.params, enforce_prop=plan.enforce_prop,
+                params=plan.params, enforce_prop=plan.enforce_prop, table=plan.table,
             )
         except ToolError as e:
             return self._error(plan, "backtest", e)
@@ -101,6 +102,7 @@ class ResearchRunner:
                 plan.strategy, symbol=plan.symbol, timeframe=plan.timeframe,
                 params=plan.params, monte_carlo=plan.monte_carlo,
                 wf_train=plan.wf_train, wf_test=plan.wf_test, wf_step=plan.wf_step,
+                table=plan.table,
             )
         except ToolError as e:
             # Robustness couldn't run. If it's a data-setup reason (e.g. too little

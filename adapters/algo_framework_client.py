@@ -23,6 +23,7 @@ except ModuleNotFoundError:  # pragma: no cover
     logger = logging.getLogger("adapters.algo_framework_client")
 
 _STRAT_PREFIX = "STRATEGIES_JSON:"
+_DEFCFG_PREFIX = "DEFCFG:"
 
 
 class AlgoFrameworkClient:
@@ -52,9 +53,10 @@ class AlgoFrameworkClient:
 
     # ── argv builders (pure, testable) ────────────────────────────────
     def backtest_args(self, strategy, symbol=None, timeframe=None, params=None,
-                      enforce_prop=False, out_json=None) -> list[str]:
+                      enforce_prop=False, out_json=None, table=None) -> list[str]:
         args = ["backtester.py", "--strategy", strategy,
-                "--datasea", self.datasea_root, "--datasea-table", self.datasea_table]
+                "--datasea", self.datasea_root,
+                "--datasea-table", table or self.datasea_table]
         if symbol:
             args += ["--symbol", symbol]
         if timeframe:
@@ -69,9 +71,10 @@ class AlgoFrameworkClient:
 
     def robustness_args(self, strategy, symbol=None, timeframe=None, params=None,
                         monte_carlo=1000, wf_train=6, wf_test=2, wf_step=2,
-                        out_json=None) -> list[str]:
+                        out_json=None, table=None) -> list[str]:
         args = ["robustness.py", "--strategy", strategy,
-                "--datasea", self.datasea_root, "--datasea-table", self.datasea_table,
+                "--datasea", self.datasea_root,
+                "--datasea-table", table or self.datasea_table,
                 "--monte-carlo", str(monte_carlo),
                 "--wf-train", str(wf_train), "--wf-test", str(wf_test),
                 "--wf-step", str(wf_step)]
@@ -104,12 +107,30 @@ class AlgoFrameworkClient:
         self._strategies_cache = names
         return names
 
+    def get_default_config(self, strategy: str) -> dict:
+        """Introspect a strategy's default_config (the valid keys for --params)."""
+        code = (
+            "import sys, json; sys.path.insert(0, '.'); "
+            "from core.registry import StrategyRegistry as R; "
+            "R.discover('strategies'); s = R.get(%r); "
+            "print('%s' + json.dumps(getattr(s, 'default_config', {})))"
+            % (strategy, _DEFCFG_PREFIX)
+        )
+        res = self._run(["-c", code], timeout=120)
+        if not res.ok:
+            raise ToolError(f"get_default_config({strategy}) failed:\n{res.stderr[-2000:]}")
+        for line in res.stdout.splitlines():
+            s = line.strip()
+            if s.startswith(_DEFCFG_PREFIX):
+                return json.loads(s[len(_DEFCFG_PREFIX):])
+        raise ToolError(f"could not parse default_config from:\n{res.stdout[-2000:]}")
+
     def run_backtest(self, strategy, symbol=None, timeframe=None, params=None,
-                     enforce_prop=False, out_json=None, timeout=None) -> dict:
+                     enforce_prop=False, out_json=None, timeout=None, table=None) -> dict:
         """Run a single backtest. Returns the parsed summary JSON.
         Raises ToolError on failure (non-zero exit, timeout, unknown --params key)."""
         args = self.backtest_args(strategy, symbol, timeframe, params,
-                                  enforce_prop, out_json)
+                                  enforce_prop, out_json, table=table)
         res = self._run(args, timeout=timeout)
         if not res.ok:
             raise ToolError(_fmt_fail("backtest", strategy, res))
@@ -117,10 +138,11 @@ class AlgoFrameworkClient:
 
     def run_robustness(self, strategy, symbol=None, timeframe=None, params=None,
                        monte_carlo=1000, wf_train=6, wf_test=2, wf_step=2,
-                       out_json=None, timeout=None) -> dict:
+                       out_json=None, timeout=None, table=None) -> dict:
         """Run walk-forward + Monte Carlo. Returns the parsed robustness JSON."""
         args = self.robustness_args(strategy, symbol, timeframe, params,
-                                    monte_carlo, wf_train, wf_test, wf_step, out_json)
+                                    monte_carlo, wf_train, wf_test, wf_step, out_json,
+                                    table=table)
         res = self._run(args, timeout=timeout)
         if not res.ok:
             raise ToolError(_fmt_fail("robustness", strategy, res))

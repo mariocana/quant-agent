@@ -1,0 +1,208 @@
+"""StrategyResearcher — decides the next experiment(s) to run.
+
+New-architecture version: instead of authoring strategy CODE, it picks WHICH
+existing strategy to run, on WHICH symbol/timeframe, with WHICH param overrides,
+and WHY. The output is a list of ExperimentPlan objects that ResearchRunner can
+execute directly.
+
+Grounding is the point: every proposal is validated against reality —
+  - strategy must exist in the registry,
+  - (symbol, timeframe) must exist in the datasea gold inventory (table inferred),
+  - param keys must belong to the strategy's default_config,
+so the researcher can't propose an experiment that would ERROR or fail-hard.
+
+The LLM call is injectable (complete_fn) so the grounding/parse logic is testable
+without an API key. (Supersedes the legacy code-authoring researcher, removed in
+Phase 3. Authoring brand-new strategies is StrategyAuthor's job, still to come.)
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+
+from agents.research_runner import ExperimentPlan
+
+try:
+    from loguru import logger
+except ModuleNotFoundError:  # pragma: no cover
+    import logging
+    logger = logging.getLogger("agents.researcher")
+
+
+@dataclass
+class ResearchContext:
+    strategies: list[str]                        # registry names
+    inventory: list[dict]                        # datasea gold rows
+    default_configs: dict[str, dict] = field(default_factory=dict)  # strategy -> default_config
+    history: list[dict] = field(default_factory=list)               # recent experiment summaries
+
+    @classmethod
+    def build(cls, algo, sea, history=None, with_configs=True) -> "ResearchContext":
+        """Gather the live context from the adapters."""
+        from adapters.env_bridge import ToolError
+        strategies = algo.list_strategies()
+        inventory = [r for r in sea.list_available()
+                     if not str(r.get("symbol", "")).startswith("(error")]
+        configs: dict[str, dict] = {}
+        if with_configs:
+            for s in strategies:
+                try:
+                    configs[s] = algo.get_default_config(s)
+                except ToolError:
+                    configs[s] = {}
+        return cls(strategies, inventory, configs, history or [])
+
+
+SYSTEM_PROMPT = """Sei un quantitative researcher senior in un prop firm. Il tuo
+compito NON è scrivere codice: è decidere il PROSSIMO esperimento da lanciare,
+scegliendo tra strumenti che già esistono.
+
+Ricevi: le strategie disponibili (con le chiavi di config modificabili), i dati
+realmente presenti (simbolo + timeframe + span), e lo storico recente con i
+verdetti. Devi proporre esperimenti ESEGUIBILI e SENSATI.
+
+Regole ferree:
+- Usa SOLO strategie dall'elenco fornito.
+- Usa SOLO coppie (symbol, timeframe) presenti nell'inventory.
+- Nei params usa SOLO chiavi presenti nella config di QUELLA strategia.
+- Impara dallo storico: non ri-testare identiche combo già REJECTed; su combo
+  REVIEW/promettenti prova variazioni di parametri; esplora simboli/TF non ancora
+  coperti.
+- Preferisci esperimenti con una tesi chiara (regime, timeframe, parametro).
+
+Rispondi SOLO con un array JSON (nessun testo attorno), ogni elemento:
+{
+  "strategy": "NOME_ESATTO_DAL_LISTA",
+  "symbol": "SIMBOLO_ESATTO",
+  "timeframe": "TF_ESATTO",
+  "params": {"chiave": valore},   // opzionale; {} se usi i default
+  "rationale": "1-2 frasi: perché questo esperimento ha senso ora"
+}"""
+
+
+class StrategyResearcher:
+    def __init__(self, api_key: Optional[str] = None,
+                 model: str = "claude-sonnet-4-6",
+                 complete_fn: Optional[Callable[[str, str], str]] = None):
+        self.api_key = api_key
+        self.model = model
+        self._complete_fn = complete_fn  # injectable for tests
+
+    # ── public ────────────────────────────────────────────────────────
+    def propose(self, context: ResearchContext, n: int = 1) -> list[ExperimentPlan]:
+        user = self._user_prompt(context, n)
+        text = self._complete(SYSTEM_PROMPT, user)
+        raw = _extract_json_array(text)
+
+        plans: list[ExperimentPlan] = []
+        seen: set = set()
+        for d in raw:
+            p = self._ground(d, context)
+            if not p:
+                continue
+            key = (p.strategy, p.symbol, p.timeframe,
+                   json.dumps(p.params or {}, sort_keys=True))
+            if key in seen:
+                continue
+            seen.add(key)
+            plans.append(p)
+            if len(plans) >= n:
+                break
+        logger.info(f"🔬 Researcher proposed {len(plans)}/{n} grounded plan(s)")
+        return plans
+
+    # ── grounding ─────────────────────────────────────────────────────
+    def _ground(self, d: dict, ctx: ResearchContext) -> Optional[ExperimentPlan]:
+        if not isinstance(d, dict):
+            return None
+        want = str(d.get("strategy", "")).upper()
+        strat = next((s for s in ctx.strategies if s.upper() == want), None)
+        if not strat:
+            logger.warning(f"   dropped: unknown strategy {d.get('strategy')!r}")
+            return None
+
+        symbol, tf = d.get("symbol"), d.get("timeframe")
+        row = next((r for r in ctx.inventory
+                    if r.get("symbol") == symbol and r.get("timeframe") == tf), None)
+        if not row:
+            logger.warning(f"   dropped: no gold data for {symbol}/{tf}")
+            return None
+
+        params = d.get("params") or None
+        if params and isinstance(params, dict):
+            cfg = ctx.default_configs.get(strat)
+            if cfg:  # keep only valid keys so we never trip the tool's fail-hard
+                params = {k: v for k, v in params.items() if k in cfg} or None
+        else:
+            params = None
+
+        return ExperimentPlan(
+            strategy=strat, symbol=symbol, timeframe=tf, table=row.get("table"),
+            params=params, rationale=str(d.get("rationale", "")).strip(),
+        )
+
+    # ── prompt + completion ───────────────────────────────────────────
+    def _user_prompt(self, ctx: ResearchContext, n: int) -> str:
+        strat_lines = []
+        for s in ctx.strategies:
+            keys = list((ctx.default_configs.get(s) or {}).keys())
+            strat_lines.append(f"  - {s}: params={keys}" if keys else f"  - {s}")
+        inv_lines = [
+            f"  - {r['symbol']} {r['timeframe']} (table={r['table']}, "
+            f"{r.get('bars','?')} bars, {r.get('start','?')}→{r.get('end','?')})"
+            for r in ctx.inventory
+        ]
+        hist_lines = [
+            f"  - {h.get('strategy')}/{h.get('symbol')}/{h.get('timeframe')} "
+            f"params={h.get('params') or {}} -> {h.get('verdict')} (score {h.get('score')})"
+            for h in (ctx.history or [])[-15:]
+        ] or ["  (nessuno)"]
+
+        return (
+            f"STRATEGIE DISPONIBILI:\n" + "\n".join(strat_lines) + "\n\n"
+            f"DATI DISPONIBILI (inventory gold):\n" + "\n".join(inv_lines) + "\n\n"
+            f"STORICO RECENTE:\n" + "\n".join(hist_lines) + "\n\n"
+            f"Proponi {n} esperimento/i. Array JSON, nient'altro."
+        )
+
+    def _complete(self, system: str, user: str) -> str:
+        if self._complete_fn:
+            return self._complete_fn(system, user)
+        from agents.api_client import make_client, call_with_retry
+        client = make_client(self.api_key, timeout_seconds=120)
+        return call_with_retry(client, model=self.model, max_tokens=2000,
+                               system=system, messages=[{"role": "user", "content": user}])
+
+
+# ── robust JSON extraction (LLMs wrap arrays in prose / fences) ────────
+def _extract_json_array(text: str) -> list[dict]:
+    text = (text or "").strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        end = next((i for i, ln in enumerate(lines[1:], 1)
+                    if ln.strip().startswith("```")), len(lines))
+        text = "\n".join(lines[1:end]).strip()
+
+    i, j = text.find("["), text.rfind("]")
+    if i != -1 and j > i:
+        chunk = text[i:j + 1]
+    else:  # maybe a single object
+        oi, oj = text.find("{"), text.rfind("}")
+        chunk = text[oi:oj + 1] if (oi != -1 and oj > oi) else text
+
+    for candidate in (chunk, _fix_json(chunk)):
+        try:
+            data = json.loads(candidate)
+            return [data] if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        except (json.JSONDecodeError, TypeError):
+            continue
+    logger.error("could not parse researcher JSON")
+    return []
+
+
+def _fix_json(text: str) -> str:
+    fixed = re.sub(r'(\{|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1 "\2":', text)  # unquoted keys
+    fixed = re.sub(r',(\s*[\}\]])', r'\1', fixed)                                 # trailing commas
+    return fixed

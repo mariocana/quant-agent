@@ -74,3 +74,5 @@ $RECYCLE.BIN/
 strategies_archive/
 config.yaml
 logs/
+# Generated experiment outcomes (research_cli / orchestrator)
+experiment_results/

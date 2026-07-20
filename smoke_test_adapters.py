@@ -83,11 +83,37 @@ def _is_setup_error(err: str) -> bool:
 
 
 def _reason(e: ToolError) -> str:
-    """Extract the real tool error (last meaningful stderr line) from a ToolError."""
+    """Extract the real tool error from a ToolError (prefer a known setup cause)."""
     lines = [ln.strip() for ln in str(e).splitlines() if ln.strip()]
+    for ln in lines:  # a line naming a setup cause is the most informative
+        if any(m in ln for m in _SETUP_MARKERS):
+            return ln
     meaningful = [ln for ln in lines
                   if not ln.startswith("stderr tail") and "failed (rc=" not in ln]
     return meaningful[-1] if meaningful else (lines[0] if lines else "unknown error")
+
+
+def _span_months(row: dict | None) -> int | None:
+    """Approx calendar months between a gold row's start/end (YYYY-MM-DD strings)."""
+    if not row:
+        return None
+    try:
+        from datetime import date
+        s = date.fromisoformat(str(row["start"])[:10])
+        e = date.fromisoformat(str(row["end"])[:10])
+        return max(0, (e.year - s.year) * 12 + (e.month - s.month))
+    except Exception:
+        return None
+
+
+def fit_wf(months: int | None) -> tuple[int, int, int]:
+    """Pick walk-forward train/test/step (months) that fit the available span.
+    Returns the defaults (6/2/2) when span is unknown or comfortably large."""
+    if not months or months >= 8:
+        return 6, 2, 2
+    test = 1
+    train = max(2, months - test - 1)  # leave room for at least one full window
+    return train, test, max(1, test)
 
 
 def load_tools_config() -> dict:
@@ -197,14 +223,19 @@ def main():
     print("\n[3] choose experiment")
     strategy = args.strategy or (strategies[0] if strategies else None)
     chosen_table = args.table
+    chosen_row = None
     if args.symbol and args.tf:
         symbol, tf = args.symbol, args.tf
+        # find the matching inventory row (for span-aware walk-forward sizing)
+        chosen_row = next((x for x in inventory
+                           if x.get("symbol") == symbol and x.get("timeframe") == tf), None)
     elif inventory:
         # Prefer a row from the configured table (that's where the registered
         # strategies' symbols live); else fall back to the first real row and use
         # ITS table — otherwise we'd query a symbol in the wrong table (rc=1).
         rows = [x for x in inventory if not str(x["symbol"]).startswith("(error")]
         row = next((x for x in rows if x["table"] == args.table), None) or (rows[0] if rows else None)
+        chosen_row = row
         symbol = args.symbol or (row["symbol"] if row else None)
         tf = args.tf or (row["timeframe"] if row else None)
         chosen_table = row["table"] if row else args.table
@@ -273,9 +304,14 @@ def main():
 
     # 7) run_robustness -------------------------------------------------------
     print("\n[7] run_robustness (walk-forward + Monte Carlo)")
+    span = _span_months(chosen_row)
+    wf_train, wf_test, wf_step = fit_wf(span)
+    if span is not None:
+        print(f"      data span ≈ {span} months -> wf {wf_train}m train / {wf_test}m test / {wf_step}m step")
     try:
         rob = algo.run_robustness(strategy, symbol=symbol, timeframe=tf,
-                                  monte_carlo=args.monte_carlo)
+                                  monte_carlo=args.monte_carlo,
+                                  wf_train=wf_train, wf_test=wf_test, wf_step=wf_step)
         checks = [
             (rob.get("schema") == "algo_framework.robustness.v1", "schema"),
             ("walk_forward" in rob, "walk_forward present"),

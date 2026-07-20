@@ -72,14 +72,26 @@ Regole ferree:
   coperti.
 - Preferisci esperimenti con una tesi chiara (regime, timeframe, parametro).
 
-Rispondi SOLO con un array JSON (nessun testo attorno), ogni elemento:
+Rispondi SOLO con un array JSON (nessun testo attorno). Due tipi di elemento:
+
+A) Esperimento su strategia ESISTENTE:
 {
   "strategy": "NOME_ESATTO_DAL_LISTA",
   "symbol": "SIMBOLO_ESATTO",
   "timeframe": "TF_ESATTO",
   "params": {"chiave": valore},   // opzionale; {} se usi i default
-  "rationale": "1-2 frasi: perché questo esperimento ha senso ora"
-}"""
+  "rationale": "1-2 frasi"
+}
+
+B) Strategia NUOVA da scrivere (solo se nessuna esistente è adatta al regime):
+{
+  "strategy": "tipo_breve",        // hint di tipo, es. "mean_reversion"
+  "symbol": "SIMBOLO_ESATTO",      // deve esistere nell'inventory
+  "timeframe": "TF_ESATTO",
+  "author_brief": "descrizione dell'ipotesi/logica da implementare (2-4 frasi)",
+  "rationale": "perché serve una strategia nuova qui"
+}
+Preferisci (A). Usa (B) con parsimonia."""
 
 
 class StrategyResearcher:
@@ -103,7 +115,8 @@ class StrategyResearcher:
             if not p:
                 continue
             key = (p.strategy, p.symbol, p.timeframe,
-                   json.dumps(p.params or {}, sort_keys=True))
+                   json.dumps(p.params or {}, sort_keys=True),
+                   json.dumps(p.author_brief, sort_keys=True, default=str) if p.author_brief else "")
             if key in seen:
                 continue
             seen.add(key)
@@ -117,17 +130,29 @@ class StrategyResearcher:
     def _ground(self, d: dict, ctx: ResearchContext) -> Optional[ExperimentPlan]:
         if not isinstance(d, dict):
             return None
-        want = str(d.get("strategy", "")).upper()
-        strat = next((s for s in ctx.strategies if s.upper() == want), None)
-        if not strat:
-            logger.warning(f"   dropped: unknown strategy {d.get('strategy')!r}")
-            return None
 
         symbol, tf = d.get("symbol"), d.get("timeframe")
         row = next((r for r in ctx.inventory
                     if r.get("symbol") == symbol and r.get("timeframe") == tf), None)
         if not row:
             logger.warning(f"   dropped: no gold data for {symbol}/{tf}")
+            return None
+
+        # author_new: a brief for a brand-new strategy. No registry check — the
+        # strategy doesn't exist yet; 'strategy' is just a type hint. Still needs
+        # real data to be tested on (grounded above).
+        brief = d.get("author_brief")
+        if brief:
+            return ExperimentPlan(
+                strategy=str(d.get("strategy") or "custom"), symbol=symbol, timeframe=tf,
+                table=row.get("table"), params=None,
+                rationale=str(d.get("rationale", "")).strip(), author_brief=brief,
+            )
+
+        want = str(d.get("strategy", "")).upper()
+        strat = next((s for s in ctx.strategies if s.upper() == want), None)
+        if not strat:
+            logger.warning(f"   dropped: unknown strategy {d.get('strategy')!r}")
             return None
 
         params = d.get("params") or None

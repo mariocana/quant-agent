@@ -22,15 +22,16 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from config import Config
 from db.database import init_db, get_session_factory
-from db.models import Strategy, Backtest, Candidate, CycleLog
+from db.models import Strategy, Backtest, Candidate, CycleLog, UserIdea
 from db.mapping import outcome_to_rows
 
 from adapters.algo_framework_client import AlgoFrameworkClient
 from adapters.datasea_client import DataseaClient
-from agents.result_evaluator import ResultEvaluator
-from agents.research_runner import ResearchRunner
+from agents.result_evaluator import ResultEvaluator, APPROVE
+from agents.research_runner import ResearchRunner, plan_from_idea, ERROR
 from agents.researcher import StrategyResearcher
 from agents.research_loop import ResearchLoop
+from agents.strategy_author import StrategyAuthor
 
 
 # Setup logging
@@ -73,7 +74,13 @@ class Orchestrator:
             robustness_gate=self.config.get("robustness_gate"),
             api_key=api_key, model=model,
         )
-        self.runner = ResearchRunner(self.algo, self.evaluator)
+        self.author = StrategyAuthor(
+            algo_dir=self.config.get("tools.algo_framework_dir"),
+            api_key=api_key, model=model,
+            python_exec=self.config.get("tools.python_exec", "python"),
+            conda_env=conda_env,
+        )
+        self.runner = ResearchRunner(self.algo, self.evaluator, author=self.author)
         self.researcher = StrategyResearcher(api_key, model)
 
         self.loop = ResearchLoop(
@@ -94,15 +101,61 @@ class Orchestrator:
 
         logger.info(f"\n{'='*60}\n🔄 CYCLE START\n{'='*60}")
         try:
-            report = self.loop.run_once()
+            idea_ran, idea_cands = self._process_ideas()      # user ideas first (priority)
+            report = self.loop.run_once()                     # researcher-driven experiments
             self._finalize_cycle(cid, status="completed",
                                  proposed=report.proposed,
-                                 ran=len(report.outcomes),
-                                 candidates=len(report.candidates))
-            logger.info(f"✅ Cycle done: {report.counts()} | {len(report.candidates)} candidate(s)")
+                                 ran=len(report.outcomes) + idea_ran,
+                                 candidates=len(report.candidates) + idea_cands)
+            logger.info(f"✅ Cycle done: {report.counts()} | "
+                        f"{len(report.candidates) + idea_cands} candidate(s), "
+                        f"{idea_ran} from ideas")
         except Exception as e:
             logger.exception(f"Cycle failed: {e}")
             self._finalize_cycle(cid, status="failed", error=str(e))
+
+    # ── user ideas approved in the dashboard -> author + run ──────────
+    def _process_ideas(self):
+        """UserIdea(status=approved_for_dev) -> author a strategy -> run -> update."""
+        s = self.SessionFactory()
+        ran = candidates = 0
+        try:
+            ideas = s.query(UserIdea).filter(UserIdea.status == "approved_for_dev").all()
+            if not ideas:
+                return 0, 0
+            try:
+                inventory = self.sea.list_available()
+            except Exception as e:
+                logger.warning(f"ideas: datasea inventory unavailable ({e}); skipping this cycle")
+                return 0, 0
+            table = self.config.get("tools.datasea_table", "mt5_ohlcv_ftmo")
+            for idea in ideas:
+                logger.info(f"💡 Processing user idea: {idea.user_title}")
+                plan = plan_from_idea(idea.structured_strategy, inventory, table)
+                if plan is None:
+                    idea.status = "rejected"
+                    s.commit()
+                    continue
+                outcome = self.runner.run(plan)               # authors the strategy, then runs it
+                strat_id = self._persist_outcome(outcome)
+                ran += 1
+                if outcome.verdict == APPROVE:
+                    candidates += 1
+                if outcome.verdict == ERROR:
+                    idea.status = "rejected"
+                    logger.warning(f"   idea {idea.id} rejected: {outcome.error}")
+                else:
+                    idea.status = "in_pipeline"
+                    idea.linked_strategy_id = strat_id
+                    logger.info(f"   idea {idea.id} -> {outcome.verdict} (strategy {strat_id})")
+                idea.user_decided_at = datetime.utcnow()
+                s.commit()
+        except Exception as e:
+            logger.exception(f"idea processing failed: {e}")
+            s.rollback()
+        finally:
+            s.close()
+        return ran, candidates
 
     def _finalize_cycle(self, cid, status, proposed=0, ran=0, candidates=0, error=None):
         s = self.SessionFactory()
@@ -121,9 +174,10 @@ class Orchestrator:
 
     # ── persist one experiment outcome (dashboard reads these) ─────────
     def _persist_outcome(self, outcome):
+        """Write Strategy+Backtest(+Candidate). Returns the Strategy id (or None)."""
         rows = outcome_to_rows(outcome)
         if rows is None:
-            return  # ERROR outcome: nothing to persist
+            return None  # ERROR outcome: nothing to persist
         s = self.SessionFactory()
         try:
             strat = Strategy(**rows["strategy"])
@@ -134,10 +188,13 @@ class Orchestrator:
             s.flush()
             if rows["candidate"]:
                 s.add(Candidate(backtest_id=bt.id, **rows["candidate"]))
+            strat_id = strat.id
             s.commit()
+            return strat_id
         except Exception as e:
             logger.exception(f"persist failed: {e}")
             s.rollback()
+            return None
         finally:
             s.close()
 

@@ -17,6 +17,28 @@ mt5:
   path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
   timeout: 60000
 
+# ============================================================
+# TOOLS — Layer 2 adapters (algo_framework + datasea)
+# ============================================================
+# I due tool girano nello stesso conda env (`workbench`).
+# L'agente NON li importa: lancia i loro CLI via subprocess e legge il JSON
+# esportato con --export-json (contratto machine-readable).
+tools:
+  # Cartella del repo algo_framework — i comandi girano DA QUI (import relativi)
+  algo_framework_dir: "C:\\Mac\\Home\\Documents\\Repo\\algo_framework"
+  # Root del data lake datasea (Delta Lake gold)
+  datasea_data_root: "C:\\datasea_data"
+  # Tabella gold per broker
+  datasea_table: "mt5_ohlcv_ftmo"
+  # Python con l'env workbench (deltalake, polars, framework deps).
+  # Se lanci l'orchestrator GIÀ dentro l'env workbench, lascia "python".
+  python_exec: "python"
+  # In alternativa avvolgi ogni comando in `conda run -n <env>`:
+  #   lascia "" per usare python_exec direttamente; es. "workbench" per wrappare.
+  conda_env: ""
+  # Timeout (secondi) per un backtest / robustness completo
+  backtest_timeout_s: 1800
+
 database:
   url: "sqlite:///db/prop_agent.db"
 

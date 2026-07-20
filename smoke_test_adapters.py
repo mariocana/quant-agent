@@ -82,6 +82,14 @@ def _is_setup_error(err: str) -> bool:
     return any(m in err for m in _SETUP_MARKERS)
 
 
+def _reason(e: ToolError) -> str:
+    """Extract the real tool error (last meaningful stderr line) from a ToolError."""
+    lines = [ln.strip() for ln in str(e).splitlines() if ln.strip()]
+    meaningful = [ln for ln in lines
+                  if not ln.startswith("stderr tail") and "failed (rc=" not in ln]
+    return meaningful[-1] if meaningful else (lines[0] if lines else "unknown error")
+
+
 def load_tools_config() -> dict:
     """Read [tools] from config.yaml if present. Best-effort; returns {} otherwise."""
     p = Path(__file__).parent / "config.yaml"
@@ -188,17 +196,26 @@ def main():
     # 3) choose an experiment -------------------------------------------------
     print("\n[3] choose experiment")
     strategy = args.strategy or (strategies[0] if strategies else None)
+    chosen_table = args.table
     if args.symbol and args.tf:
         symbol, tf = args.symbol, args.tf
     elif inventory:
-        row = next((x for x in inventory if not str(x["symbol"]).startswith("(error")), None)
+        # Prefer a row from the configured table (that's where the registered
+        # strategies' symbols live); else fall back to the first real row and use
+        # ITS table — otherwise we'd query a symbol in the wrong table (rc=1).
+        rows = [x for x in inventory if not str(x["symbol"]).startswith("(error")]
+        row = next((x for x in rows if x["table"] == args.table), None) or (rows[0] if rows else None)
         symbol = args.symbol or (row["symbol"] if row else None)
         tf = args.tf or (row["timeframe"] if row else None)
+        chosen_table = row["table"] if row else args.table
     else:
         symbol, tf = args.symbol, args.tf
 
+    # Point the client at the table the chosen symbol actually lives in.
+    algo.datasea_table = chosen_table
+
     if strategy and symbol and tf:
-        r.add(PASS, "experiment chosen", f"{strategy} / {symbol} / {tf}")
+        r.add(PASS, "experiment chosen", f"{strategy} / {symbol} / {tf} (table={chosen_table})")
     else:
         r.add(SKIP, "experiment chosen", "need strategy+symbol+tf (pass --strategy/--symbol/--tf)")
         r.summary()
@@ -221,9 +238,9 @@ def main():
         print(f"      trades={m.get('total_trades')}  PF={m.get('profit_factor')}  "
               f"Sharpe={m.get('sharpe_ratio')}  maxDD%={m.get('max_drawdown_pct')}")
     except ToolError as e:
-        (r.add(SKIP, "run_backtest", "tool refused: " + str(e).splitlines()[0])
+        (r.add(SKIP, "run_backtest", "tool refused: " + _reason(e))
          if _is_setup_error(str(e)) else
-         r.add(FAIL, "run_backtest", str(e).splitlines()[0]))
+         r.add(FAIL, "run_backtest", _reason(e)))
 
     # 5) --params override reflected -----------------------------------------
     print("\n[5] --params override")
@@ -238,9 +255,9 @@ def main():
             r.add(PASS if got == val else FAIL, "--params override reflected",
                   f"{key}={got} (sent {val})")
         except ToolError as e:
-            (r.add(SKIP, "--params override", "tool refused: " + str(e).splitlines()[0])
+            (r.add(SKIP, "--params override", "tool refused: " + _reason(e))
              if _is_setup_error(str(e)) else
-             r.add(FAIL, "--params override", str(e).splitlines()[0]))
+             r.add(FAIL, "--params override", _reason(e)))
 
     # 6) fail-hard on unknown --params key -----------------------------------
     print("\n[6] --params fail-hard on unknown key")
@@ -271,9 +288,9 @@ def main():
         print(f"      WF consistency={wf.get('consistency_pct')}%  "
               f"MC prop_pass={mc.get('prop_pass_rate')}%  prob_profit={mc.get('prob_profitable')}%")
     except ToolError as e:
-        (r.add(SKIP, "run_robustness", "tool refused: " + str(e).splitlines()[0])
+        (r.add(SKIP, "run_robustness", "tool refused: " + _reason(e))
          if _is_setup_error(str(e)) else
-         r.add(FAIL, "run_robustness", str(e).splitlines()[0]))
+         r.add(FAIL, "run_robustness", _reason(e)))
 
     r.summary()
     sys.exit(1 if r.failed() else 0)

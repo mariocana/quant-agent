@@ -1,21 +1,15 @@
 # ============================================================
-# QUANT AGENT — CONFIG (v2 — market-aware)
+# QUANT AGENT — CONFIG
 # ============================================================
-# IMPORTANTE: rinomina questo file in config.yaml
-# Il sistema ora SCANSIONA il mercato e SCEGLIE da solo simbolo+TF
+# Rinomina questo file in config.yaml.
+# L'agente orchestra algo_framework + datasea: propone esperimenti su strategie
+# esistenti, li esegue via CLI e li giudica. Non genera più codice MQL5.
 # ============================================================
 
 claude:
   api_key: "sk-ant-YOUR_ACTUAL_KEY_HERE"
-  model: "claude-sonnet-4-6"        # corretto. NON usare claude-sonnet-4-5
+  model: "claude-sonnet-4-6"        # usato da StrategyResearcher + narrativa
   max_tokens: 4096
-
-mt5:
-  login: 12345678
-  password: "YOUR_DEMO_PASSWORD"
-  server: "MetaQuotes-Demo"
-  path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
-  timeout: 60000
 
 # ============================================================
 # TOOLS — Layer 2 adapters (algo_framework + datasea)
@@ -43,39 +37,14 @@ database:
   url: "sqlite:///db/prop_agent.db"
 
 orchestrator:
-  cycle_hours: 4
-  max_strategies_per_cycle: 2
-  profiles_active:
-    - aggressive
-    # - conservative                 # disabilita per primi test
-  
-  # ⭐ Timeframes che lo scanner valuta per ogni simbolo
-  scan_timeframes:
-    - M15
-    - H1
-    - H4
-    - D1
-  
-  # ⭐ watchlist OPZIONALE
-  # Se omessa, usa la default (majors + indices + metals + crypto)
-  # Sintassi: { simbolo: asset_class }
-  # asset_class: forex_major | forex_cross | metal | index | crypto
-  #
-  # watchlist:
-  #   EURUSD: forex_major
-  #   XAUUSD: metal
-  #   US30: index
+  cycle_hours: 4                    # ogni quante ore parte un ciclo
+  max_experiments_per_cycle: 2      # quanti esperimenti propone/esegue per ciclo
 
+# Usato dall'idea evaluator (dashboard) per contestualizzare le regole prop.
 prop:
   target_firm: "ftmo"
   account_size: 10000
   phase: "free_trial"
-
-backtest:
-  history_years: 2
-  walk_forward_splits: 5
-  initial_deposit: 10000
-  optimization_passes: 200
 
 validation_criteria:
   min_profit_factor: 1.5

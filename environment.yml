@@ -10,9 +10,7 @@ channels:
 dependencies:
   - python=3.11
   
-  # Conda packages (ottimizzati con MKL su Windows)
-  - pandas>=2.1.0
-  - numpy>=1.26.0
+  # Conda packages
   - sqlalchemy>=2.0.0
   - pyyaml>=6.0
   - pillow>=10.0.0
@@ -30,7 +28,6 @@ dependencies:
     - anthropic>=0.40.0
     - pydantic>=2.5.0
     - python-dotenv>=1.0.0
-    - MetaTrader5>=5.0.45
     - apscheduler>=3.10.4
     - pypdf>=4.0.0
     - python-docx>=1.1.0

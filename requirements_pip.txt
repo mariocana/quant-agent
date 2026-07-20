@@ -6,12 +6,6 @@ anthropic>=0.40.0
 pydantic>=2.5.0
 python-dotenv>=1.0.0
 
-# MT5 integration (Windows only)
-MetaTrader5>=5.0.45
-
-# Backtest analysis (opzionale, non richiesti per MVP)
-# quantstats>=0.0.62
-
 # Scheduling
 apscheduler>=3.10.4
 

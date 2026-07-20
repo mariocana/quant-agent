@@ -4,15 +4,6 @@ pyyaml>=6.0
 pydantic>=2.5.0
 python-dotenv>=1.0.0
 
-# MT5 integration
-MetaTrader5>=5.0.45
-pandas>=2.1.0
-numpy>=1.26.0
-
-# Backtest analysis
-quantstats>=0.0.62
-pyfolio-reloaded>=0.9.5
-
 # Database
 sqlalchemy>=2.0.0
 alembic>=1.13.0
@@ -39,5 +30,7 @@ pillow>=10.0.0
 # Logging
 loguru>=0.7.2
 
-# Optional: optimization
-scikit-optimize>=0.9.0
+# NOTE: the heavy numeric/backtest work (pandas, numpy, polars, deltalake,
+# MetaTrader5, walk-forward, Monte Carlo) lives in the `workbench` conda env with
+# algo_framework + datasea. The agent only orchestrates those tools via subprocess,
+# so it deliberately does NOT depend on them here.

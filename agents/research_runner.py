@@ -156,6 +156,30 @@ def _tool_reason(e) -> str:
     return meaningful[-1] if meaningful else (lines[0] if lines else "unknown error")
 
 
+def span_months(row: dict) -> Optional[int]:
+    """Approx calendar months between a gold row's start/end (YYYY-MM-DD)."""
+    if not row:
+        return None
+    try:
+        from datetime import date
+        s = date.fromisoformat(str(row["start"])[:10])
+        e = date.fromisoformat(str(row["end"])[:10])
+        return max(0, (e.year - s.year) * 12 + (e.month - s.month))
+    except Exception:
+        return None
+
+
+def fit_wf(months: Optional[int]) -> tuple:
+    """Walk-forward (train, test, step) months that fit the data span. Defaults
+    (6, 2, 2) when the span is unknown or comfortably large (>= 8 months);
+    otherwise shrink so at least one full window fits (else robustness reports
+    'insufficient data' and never runs)."""
+    if not months or months >= 8:
+        return 6, 2, 2
+    test = 1
+    return max(2, months - test - 1), test, 1
+
+
 def plan_from_idea(structured: dict, inventory: list, default_table: str,
                    monte_carlo: int = 1000) -> Optional[ExperimentPlan]:
     """Build an author_new ExperimentPlan from a UserIdea's structured_strategy.
@@ -176,9 +200,10 @@ def plan_from_idea(structured: dict, inventory: list, default_table: str,
                     and r.get("timeframe") == want_tf), None)
     if row is None:
         row = next((r for r in rows if r.get("table") == default_table), None) or rows[0]
+    wf_train, wf_test, wf_step = fit_wf(span_months(row))
     return ExperimentPlan(
         strategy=str(structured.get("strategy_type") or "custom"),
         symbol=row["symbol"], timeframe=row["timeframe"], table=row["table"],
         author_brief=structured, rationale=str(structured.get("hypothesis", "")),
-        monte_carlo=monte_carlo,
+        monte_carlo=monte_carlo, wf_train=wf_train, wf_test=wf_test, wf_step=wf_step,
     )

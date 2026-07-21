@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from agents.research_runner import ExperimentPlan
+from agents.research_runner import ExperimentPlan, span_months, fit_wf
 
 try:
     from loguru import logger
@@ -144,6 +144,9 @@ class StrategyResearcher:
             logger.warning(f"   dropped: no gold data for {symbol}/{tf}")
             return None
 
+        # size the walk-forward to the data span so robustness actually runs
+        wf_train, wf_test, wf_step = fit_wf(span_months(row))
+
         # author_new: a brief for a brand-new strategy. No registry check — the
         # strategy doesn't exist yet; 'strategy' is just a type hint. Still needs
         # real data to be tested on (grounded above).
@@ -153,6 +156,7 @@ class StrategyResearcher:
                 strategy=str(d.get("strategy") or "custom"), symbol=symbol, timeframe=tf,
                 table=row.get("table"), params=None,
                 rationale=str(d.get("rationale", "")).strip(), author_brief=brief,
+                wf_train=wf_train, wf_test=wf_test, wf_step=wf_step,
             )
 
         want = str(d.get("strategy", "")).upper()
@@ -180,6 +184,7 @@ class StrategyResearcher:
         return ExperimentPlan(
             strategy=strat, symbol=symbol, timeframe=tf, table=row.get("table"),
             params=params, rationale=str(d.get("rationale", "")).strip(),
+            wf_train=wf_train, wf_test=wf_test, wf_step=wf_step,
         )
 
     # ── prompt + completion ───────────────────────────────────────────

@@ -75,24 +75,38 @@ class StrategyAuthor:
 
     # ── public ────────────────────────────────────────────────────────
     def author(self, brief: Union[str, dict], strategy_type: str = "custom",
-               dry_import: bool = True) -> AuthoredStrategy:
+               dry_import: bool = True, max_attempts: int = 2) -> AuthoredStrategy:
+        """Generate + validate a strategy, retrying with the error fed back to
+        Claude (a syntax/safety/dry-import failure is often self-corrected on the
+        next attempt) before giving up."""
         reference = self._read_reference()
-        code = _extract_code(self._complete(SYSTEM_PROMPT, self._user_prompt(brief, reference)))
+        last_err: Optional[str] = None
 
-        self.validate_syntax(code)          # raises AuthorError
-        self.check_safety(code)             # raises AuthorError
-        code = code.rstrip() + "\n"         # normalise: end with exactly one newline
+        for attempt in range(1, max_attempts + 1):
+            user = self._user_prompt(brief, reference)
+            if last_err:
+                user += (f"\n\nYOUR PREVIOUS ATTEMPT FAILED:\n{last_err}\n"
+                         "Return the FULL corrected file (only code, no fences).")
+            code = _extract_code(self._complete(SYSTEM_PROMPT, user))
+            try:
+                self.validate_syntax(code)
+                self.check_safety(code)
+                code = code.rstrip() + "\n"     # normalise: end with one newline
+                name = self._dry_import(code) if dry_import else None
+            except AuthorError as e:
+                last_err = str(e)
+                logger.warning(f"author attempt {attempt}/{max_attempts} failed: "
+                               f"{last_err.splitlines()[0]}")
+                continue
 
-        name = None
-        if dry_import:
-            name = self._dry_import(code)   # raises AuthorError on failure
+            path = self._target_path(strategy_type, name or _class_name(code) or "STRATEGY")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(code, encoding="utf-8")
+            logger.info(f"✍️  authored {path.name} (name={name})")
+            return AuthoredStrategy(name=name or _class_name(code) or path.stem,
+                                    path=str(path), strategy_type=strategy_type, code=code)
 
-        path = self._target_path(strategy_type, name or _class_name(code) or "STRATEGY")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(code, encoding="utf-8")
-        logger.info(f"✍️  authored {path.name} (name={name})")
-        return AuthoredStrategy(name=name or _class_name(code) or path.stem,
-                                path=str(path), strategy_type=strategy_type, code=code)
+        raise AuthorError(f"author failed after {max_attempts} attempts. Last error:\n{last_err}")
 
     # ── validation ────────────────────────────────────────────────────
     @staticmethod

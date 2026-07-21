@@ -210,9 +210,17 @@ class StrategyResearcher:
             for h in (ctx.history or [])[-15:]
         ] or ["  (nessuno)"]
 
+        # strategies that crashed recently (ERROR) — likely broken; tell the LLM
+        # to avoid burning cycles on them.
+        errored = sorted({h.get("strategy") for h in (ctx.history or [])[-20:]
+                          if h.get("verdict") == "ERROR" and h.get("strategy")})
+        avoid = (f"\n⚠️ STRATEGIE DA EVITARE (hanno dato ERROR di recente, probabilmente "
+                 f"rotte): {errored}\n" if errored else "")
+
         return (
             f"STRATEGIE DISPONIBILI:\n" + "\n".join(strat_lines) + "\n\n"
-            f"DATI DISPONIBILI (inventory gold):\n" + "\n".join(inv_lines) + "\n\n"
+            f"DATI DISPONIBILI (inventory gold):\n" + "\n".join(inv_lines) + "\n"
+            + avoid + "\n"
             f"STORICO RECENTE:\n" + "\n".join(hist_lines) + "\n\n"
             f"Proponi {n} esperimento/i. Array JSON, nient'altro."
         )

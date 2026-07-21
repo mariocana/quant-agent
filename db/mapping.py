@@ -10,7 +10,7 @@ sentinel instead of None.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from agents.research_runner import ExperimentOutcome, APPROVE, REVIEW
@@ -20,12 +20,12 @@ PF_INF_SENTINEL = 9999.99  # "no losses" — a real infinite PF, shown as a big 
 
 def _dt(s) -> datetime:
     if not s:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
     try:
         d = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
         return d.replace(tzinfo=None)
     except ValueError:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
 
 def _num(x, default=0.0) -> float:
@@ -91,7 +91,7 @@ def outcome_to_rows(outcome: ExperimentOutcome) -> Optional[dict]:
             "ai_analysis": ("\n".join(an.reasons) if an and an.reasons else None),
             "recommendation": outcome.verdict,
             "status": "pending",
-            "notified_at": datetime.utcnow(),
+            "notified_at": datetime.now(timezone.utc),
         }
 
     return {"strategy": strategy, "backtest": backtest, "candidate": candidate}

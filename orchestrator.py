@@ -16,7 +16,7 @@ Note: user ideas approved in the dashboard (status=approved_for_dev) are NOT yet
 turned into strategies — that needs StrategyAuthor (next), so they wait.
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from loguru import logger
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -149,7 +149,7 @@ class Orchestrator:
                     idea.status = "in_pipeline"
                     idea.linked_strategy_id = strat_id
                     logger.info(f"   idea {idea.id} -> {outcome.verdict} (strategy {strat_id})")
-                idea.user_decided_at = datetime.utcnow()
+                idea.user_decided_at = datetime.now(timezone.utc)
                 s.commit()
         except Exception as e:
             logger.exception(f"idea processing failed: {e}")
@@ -161,9 +161,9 @@ class Orchestrator:
     def _finalize_cycle(self, cid, status, proposed=0, ran=0, candidates=0, error=None):
         s = self.SessionFactory()
         try:
-            cl = s.query(CycleLog).get(cid)
+            cl = s.get(CycleLog, cid)
             if cl:
-                cl.completed_at = datetime.utcnow()
+                cl.completed_at = datetime.now(timezone.utc)
                 cl.status = status
                 cl.strategies_generated = proposed
                 cl.backtests_run = ran

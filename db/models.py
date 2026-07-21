@@ -1,5 +1,5 @@
-"""SQLAlchemy models for the prop agent system."""
-from datetime import datetime
+"""SQLAlchemy models for the quant agent system."""
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, JSON, Boolean, Text, ForeignKey
 )
@@ -28,7 +28,7 @@ class Strategy(Base):
     compiled = Column(Boolean, default=False)
     compile_errors = Column(Text)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     backtests = relationship("Backtest", back_populates="strategy")
 
@@ -81,7 +81,7 @@ class Backtest(Base):
     # Report files
     report_html_path = Column(String(500))
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     strategy = relationship("Strategy", back_populates="backtests")
 
@@ -106,7 +106,7 @@ class Candidate(Base):
     
     user_notes = Column(Text)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class CycleLog(Base):
@@ -115,7 +115,7 @@ class CycleLog(Base):
     
     id = Column(Integer, primary_key=True)
     cycle_number = Column(Integer)
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime)
     status = Column(String(20))                          # running | completed | failed
     
@@ -158,5 +158,5 @@ class UserIdea(Base):
     status = Column(String(20), default="evaluated")     # evaluated | approved_for_dev | in_pipeline | rejected
     linked_strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     user_decided_at = Column(DateTime)

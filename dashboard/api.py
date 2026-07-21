@@ -8,7 +8,7 @@ Apri http://localhost:8000
 """
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -24,7 +24,7 @@ from fastapi import UploadFile, File, Form
 import tempfile
 
 
-app = FastAPI(title="Prop Agent Dashboard")
+app = FastAPI(title="Quant Agent Dashboard")
 
 config = Config()
 engine = init_db(config.get("database.url"))
@@ -42,7 +42,7 @@ def index():
 <!DOCTYPE html>
 <html>
 <head>
-<title>Prop Agent Dashboard</title>
+<title>Quant Agent Dashboard</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; }
 body { background: #050811; color: #e2e8f0; padding: 24px; }
@@ -71,7 +71,7 @@ pre { background: #000814; padding: 12px; border-radius: 6px; font-size: 11px; o
 </style>
 </head>
 <body>
-<h1>◈ Prop Agent Dashboard</h1>
+<h1>◈ Quant Agent Dashboard</h1>
 <div class="subtitle"><span class="live-dot"></span>Sistema operativo · auto-refresh ogni 30s · <a href="/ideas" style="color:#00d4ff; text-decoration:none;">💡 Submit Idea →</a></div>
 
 <div id="stats" class="grid"></div>
@@ -182,10 +182,10 @@ def candidates():
         results = []
         cands = s.query(Candidate).filter(Candidate.status == "pending").all()
         for c in cands:
-            bt = s.query(Backtest).get(c.backtest_id)
+            bt = s.get(Backtest, c.backtest_id)
             if not bt:
                 continue
-            strat = s.query(Strategy).get(bt.strategy_id)
+            strat = s.get(Strategy, bt.strategy_id)
             results.append({
                 "id": c.id,
                 "ea_name": Path(strat.mql5_path).stem if strat.mql5_path else strat.name,
@@ -210,8 +210,8 @@ def backtests(limit: int = 10):
         bts = s.query(Backtest).order_by(Backtest.created_at.desc()).limit(limit).all()
         return [{
             "id": bt.id,
-            "strategy_name": s.query(Strategy).get(bt.strategy_id).name if bt.strategy_id else "?",
-            "symbol": s.query(Strategy).get(bt.strategy_id).symbol if bt.strategy_id else "?",
+            "strategy_name": s.get(Strategy, bt.strategy_id).name if bt.strategy_id else "?",
+            "symbol": s.get(Strategy, bt.strategy_id).symbol if bt.strategy_id else "?",
             "profit_factor": bt.profit_factor,
             "sharpe": bt.sharpe_ratio,
             "max_dd": bt.max_drawdown_pct,
@@ -243,11 +243,11 @@ def cycles(limit: int = 10):
 def approve(cand_id: int):
     s = SessionFactory()
     try:
-        c = s.query(Candidate).get(cand_id)
+        c = s.get(Candidate, cand_id)
         if not c:
             raise HTTPException(404)
         c.status = "approved"
-        c.approved_at = datetime.utcnow()
+        c.approved_at = datetime.now(timezone.utc)
         s.commit()
         return {"ok": True}
     finally:
@@ -258,7 +258,7 @@ def approve(cand_id: int):
 def reject(cand_id: int):
     s = SessionFactory()
     try:
-        c = s.query(Candidate).get(cand_id)
+        c = s.get(Candidate, cand_id)
         if not c:
             raise HTTPException(404)
         c.status = "rejected"
@@ -381,7 +381,7 @@ def list_ideas(limit: int = 20):
 def get_idea(idea_id: int):
     s = SessionFactory()
     try:
-        i = s.query(UserIdea).get(idea_id)
+        i = s.get(UserIdea, idea_id)
         if not i:
             raise HTTPException(404)
         return {
@@ -413,14 +413,14 @@ def approve_idea_for_pipeline(idea_id: int):
     """L'utente approva di mandare l'idea alla pipeline (codegen → backtest)."""
     s = SessionFactory()
     try:
-        idea = s.query(UserIdea).get(idea_id)
+        idea = s.get(UserIdea, idea_id)
         if not idea:
             raise HTTPException(404)
         if not idea.structured_strategy:
             raise HTTPException(400, "Idea non strutturabile")
         
         idea.status = "approved_for_dev"
-        idea.user_decided_at = datetime.utcnow()
+        idea.user_decided_at = datetime.now(timezone.utc)
         s.commit()
         
         # TODO: trigger orchestrator a processare questa idea nel prossimo ciclo
@@ -435,11 +435,11 @@ def approve_idea_for_pipeline(idea_id: int):
 def reject_idea(idea_id: int):
     s = SessionFactory()
     try:
-        idea = s.query(UserIdea).get(idea_id)
+        idea = s.get(UserIdea, idea_id)
         if not idea:
             raise HTTPException(404)
         idea.status = "rejected"
-        idea.user_decided_at = datetime.utcnow()
+        idea.user_decided_at = datetime.now(timezone.utc)
         s.commit()
         return {"ok": True}
     finally:
@@ -458,7 +458,7 @@ IDEAS_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Submit Idea — Prop Agent</title>
+<title>Submit Idea — Quant Agent</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; }
 body { background: #050811; color: #e2e8f0; padding: 24px; min-height: 100vh; }

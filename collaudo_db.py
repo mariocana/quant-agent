@@ -61,7 +61,7 @@ def main():
         if not bts:
             print("  (none)")
         for bt in bts:
-            strat = s.query(Strategy).get(bt.strategy_id)
+            strat = s.get(Strategy, bt.strategy_id)
             nm = f"{strat.name}/{strat.symbol}/{strat.timeframe}" if strat else "?"
             wf = f"{bt.walk_forward_score:.2f}" if bt.walk_forward_score is not None else "—"
             print(f"  #{bt.id:<4} {nm:<32} PF={_f(bt.profit_factor)} "
@@ -76,8 +76,8 @@ def main():
         if not cands:
             print("  (none) — no APPROVE/REVIEW yet")
         for c in cands:
-            bt = s.query(Backtest).get(c.backtest_id)
-            strat = s.query(Strategy).get(bt.strategy_id) if bt else None
+            bt = s.get(Backtest, c.backtest_id)
+            strat = s.get(Strategy, bt.strategy_id) if bt else None
             nm = f"{strat.name}/{strat.symbol}/{strat.timeframe}" if strat else "?"
             print(f"  #{c.id:<4} {nm:<32} {c.recommendation:<8} score={_f(c.overall_score)}")
 

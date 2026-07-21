@@ -64,7 +64,7 @@ def make_dirs():
 
 
 def main():
-    print("\n🤖 PROP AGENT SYSTEM — Setup\n")
+    print("\n🤖 QUANT AGENT SYSTEM — Setup\n")
     
     checks = [
         check_python_version(),

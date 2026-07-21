@@ -115,7 +115,7 @@ async function load() {
           <td>${c.profit_factor.toFixed(2)}</td>
           <td>${c.sharpe.toFixed(2)}</td>
           <td>${c.max_dd.toFixed(2)}%</td>
-          <td>${c.wf_score ? c.wf_score.toFixed(2) : '—'}</td>
+          <td>${c.wf_score != null ? c.wf_score.toFixed(2) : '—'}</td>
           <td class="verdict-${c.verdict}">${c.verdict}</td>
           <td>
             <button class="btn btn-approve" onclick="approve(${c.id})">Approva</button>

@@ -2,7 +2,7 @@
 
 **Data:** 7 Maggio 2026
 **Stato:** in review — fase concettuale
-**Autore:** Prop Agent Design Session
+**Autore:** Quant Agent Design Session
 
 ---
 

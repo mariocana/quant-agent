@@ -178,9 +178,9 @@ class StrategyAuthor:
         import json
         brief_text = json.dumps(brief, ensure_ascii=False, indent=2) if isinstance(brief, dict) else str(brief)
         return (
-            f"RIFERIMENTO (template + esempio + indicatori disponibili):\n\n{reference}\n\n"
-            f"BRIEF DELLA STRATEGIA DA SCRIVERE:\n{brief_text}\n\n"
-            "Scrivi il file .py completo. SOLO codice, nessun testo, nessun fence."
+            f"REFERENCE (template + example + available indicators):\n\n{reference}\n\n"
+            f"BRIEF OF THE STRATEGY TO WRITE:\n{brief_text}\n\n"
+            "Write the complete .py file. ONLY code, no text, no fences."
         )
 
     def _complete(self, system: str, user: str) -> str:
@@ -192,21 +192,21 @@ class StrategyAuthor:
                                system=system, messages=[{"role": "user", "content": user}])
 
 
-SYSTEM_PROMPT = """Sei uno sviluppatore quant. Scrivi un file Python COMPLETO per
-il framework algo_framework, conforme ESATTAMENTE al template fornito.
+SYSTEM_PROMPT = """You are a quant developer. Write a COMPLETE Python file for the
+algo_framework framework, conforming EXACTLY to the provided template.
 
-Requisiti tassativi:
-- Una classe che estende BaseStrategy.
-- Implementa: name (property, UNIVOCO, UPPER_SNAKE, con prefisso 'AI_'),
+Strict requirements:
+- A class that extends BaseStrategy.
+- Implement: name (property, UNIQUE, UPPER_SNAKE, with prefix 'AI_'),
   default_config (property), symbols(), timeframe(), generate_signal(symbol)
-  (live), generate_signals_batch(df, htf_df) che AGGIUNGE le colonne
+  (live), generate_signals_batch(df, htf_df) which ADDS the columns
   'signal' ('BUY'/'SELL'/None), 'sl', 'tp', 'reason'.
-- Stop loss SEMPRE definito (hard stop). Niente martingale, grid, scalping HFT.
-- USA SOLO questi import: numpy, pandas, `from core import indicators as ind`,
+- Stop loss ALWAYS defined (hard stop). No martingale, grid, HFT scalping.
+- USE ONLY these imports: numpy, pandas, `from core import indicators as ind`,
   `from core.base_strategy import BaseStrategy, Signal`, typing, dataclasses, math.
-  VIETATO: os, sys, subprocess, socket, requests, open/file I/O, eval, exec.
+  FORBIDDEN: os, sys, subprocess, socket, requests, open/file I/O, eval, exec.
 
-Output: SOLO il codice Python, senza spiegazioni e senza ``` fence."""
+Output: ONLY the Python code, no explanations and no ``` fences."""
 
 
 # ── helpers (pure, testable) ──────────────────────────────────────────

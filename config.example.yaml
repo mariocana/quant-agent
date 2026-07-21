@@ -1,50 +1,50 @@
 # ============================================================
 # QUANT AGENT — CONFIG
 # ============================================================
-# Rinomina questo file in config.yaml.
-# L'agente orchestra algo_framework + datasea: propone esperimenti su strategie
-# esistenti, li esegue via CLI e li giudica. Non genera più codice MQL5.
+# Rename this file to config.yaml.
+# The agent orchestrates algo_framework + datasea: it proposes experiments on
+# strategies, runs them via CLI and judges them. It no longer generates MQL5.
 # ============================================================
 
 claude:
   api_key: "sk-ant-YOUR_ACTUAL_KEY_HERE"
-  model: "claude-sonnet-4-6"        # usato da StrategyResearcher + narrativa
+  model: "claude-sonnet-4-6"        # used by StrategyResearcher + narrative
   max_tokens: 4096
 
 # ============================================================
 # TOOLS — Layer 2 adapters (algo_framework + datasea)
 # ============================================================
-# I due tool girano nello stesso conda env (`workbench`).
-# L'agente NON li importa: lancia i loro CLI via subprocess e legge il JSON
-# esportato con --export-json (contratto machine-readable).
+# Both tools run in the same conda env (`workbench`).
+# The agent does NOT import them: it runs their CLIs via subprocess and reads the
+# JSON they export with --export-json (machine-readable contract).
 tools:
-  # Cartella del repo algo_framework — i comandi girano DA QUI (import relativi)
+  # algo_framework repo folder — commands run FROM HERE (relative imports)
   algo_framework_dir: "C:\\Mac\\Home\\Documents\\Repo\\algo_framework"
-  # Root del data lake datasea (Delta Lake gold)
+  # datasea data lake root (Delta Lake gold)
   datasea_data_root: "C:\\datasea_data"
-  # Tabella gold per broker
+  # gold table (per broker)
   datasea_table: "mt5_ohlcv_ftmo"
-  # Python con l'env workbench (deltalake, polars, framework deps).
-  # Se lanci l'orchestrator GIÀ dentro l'env workbench, lascia "python".
+  # Python that has the workbench env (deltalake, polars, framework deps).
+  # If you run the orchestrator ALREADY inside the workbench env, leave "python".
   python_exec: "python"
-  # In alternativa avvolgi ogni comando in `conda run -n <env>`:
-  #   lascia "" per usare python_exec direttamente; es. "workbench" per wrappare.
+  # Alternatively wrap every command in `conda run -n <env>`:
+  #   leave "" to use python_exec directly; e.g. "workbench" to wrap.
   conda_env: ""
-  # Timeout (secondi) per un backtest / robustness completo
+  # Timeout (seconds) for a full backtest / robustness run
   backtest_timeout_s: 1800
 
 database:
   url: "sqlite:///db/prop_agent.db"
 
 orchestrator:
-  cycle_hours: 4                    # ogni quante ore parte un ciclo
-  max_experiments_per_cycle: 2      # quanti esperimenti propone/esegue per ciclo
-  # true (default): l'agente lavora SOLO sulle strategie che genera lui (AI_*);
-  #   se non ce ne sono, le crea (author_new). Non tocca mai le tue strategie.
-  # false: SOLO per test/collaudo, può girare anche sulle strategie esistenti.
+  cycle_hours: 4                    # how often a cycle starts
+  max_experiments_per_cycle: 2      # how many experiments to propose/run per cycle
+  # true (default): the agent works ONLY on strategies it generates (AI_*);
+  #   if there are none, it creates them (author_new). Never touches your strategies.
+  # false: for testing only, may also run on existing strategies.
   only_ai_strategies: true
 
-# Usato dall'idea evaluator (dashboard) per contestualizzare le regole prop.
+# Used by the idea evaluator (dashboard) to contextualize the prop rules.
 prop:
   target_firm: "ftmo"
   account_size: 10000
@@ -58,11 +58,11 @@ validation_criteria:
   min_win_rate: 0.40
   max_consecutive_losses: 6
 
-# Robustness gate (walk-forward + Monte Carlo) — OBBLIGATORIO per un APPROVE.
-# Un backtest promettente ma non robusto NON diventa candidate: è la difesa
-# contro l'over-ottimizzazione (l'agente prova centinaia di config e terrebbe
-# le migliori "per caso"). Soglie allineate a robustness.py ("rischio accettabile").
+# Robustness gate (walk-forward + Monte Carlo) — MANDATORY for an APPROVE.
+# A promising but non-robust backtest does NOT become a candidate: it's the
+# defense against over-optimisation (the agent tries hundreds of configs and would
+# keep the best "by luck"). Thresholds aligned to robustness.py ("acceptable risk").
 robustness_gate:
-  min_wf_consistency_pct: 70      # % di finestre OOS profittevoli
-  min_mc_prop_pass_pct: 70        # % simulazioni MC che passano la challenge
-  min_mc_prob_profitable_pct: 60  # % simulazioni MC con PnL finale > 0
+  min_wf_consistency_pct: 70      # % of profitable OOS windows
+  min_mc_prop_pass_pct: 70        # % of MC simulations that pass the challenge
+  min_mc_prob_profitable_pct: 60  # % of MC simulations with final PnL > 0

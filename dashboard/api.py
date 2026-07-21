@@ -486,10 +486,10 @@ input:focus, textarea:focus { outline: none; border-color: #00d4ff66; }
 .section-input.active { display: block; }
 .result { margin-top: 24px; padding: 20px; border-radius: 10px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); }
 .verdict { font-size: 18px; font-weight: 700; padding: 8px 14px; border-radius: 6px; display: inline-block; margin-bottom: 16px; }
-.verdict-PROMETTENTE { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid #34d39966; }
-.verdict-INTERESSANTE_CON_RISERVE { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid #fbbf2466; }
-.verdict-RISCHIOSA { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid #f8717166; }
-.verdict-DA_SCARTARE { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid #94a3b866; }
+.verdict-PROMISING { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid #34d39966; }
+.verdict-INTERESTING_WITH_RESERVATIONS { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid #fbbf2466; }
+.verdict-RISKY { background: rgba(248,113,113,0.15); color: #f87171; border: 1px solid #f8717166; }
+.verdict-DISCARD { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid #94a3b866; }
 .scores { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0; }
 .score-card { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 6px; }
 .score-label { color: #64748b; font-size: 11px; text-transform: uppercase; }
@@ -592,7 +592,7 @@ document.getElementById('ideaForm').addEventListener('submit', async (e) => {
 });
 
 function showResult(data) {
-  const verdict = data.verdict || 'INTERESSANTE_CON_RISERVE';
+  const verdict = data.verdict || 'INTERESTING_WITH_RESERVATIONS';
   const html = `
     <div class="result">
       <div class="verdict verdict-${verdict}">${verdict.replace(/_/g, ' ')}</div>

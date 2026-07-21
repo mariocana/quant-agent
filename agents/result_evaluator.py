@@ -152,24 +152,24 @@ class ResultEvaluator:
         # ── verdict ──
         if trades < c["min_trades"]:
             verdict = REJECT
-            reasons.append(f"campione insufficiente: {trades} trade < {c['min_trades']}")
+            reasons.append(f"insufficient sample: {trades} trades < {c['min_trades']}")
         elif not backtest_ok:
             verdict = REJECT
             for ck in bt_checks:
                 if not ck.passed:
-                    reasons.append("backtest fallito: " + ck.describe())
+                    reasons.append("backtest failed: " + ck.describe())
         elif not robustness_evaluated:
             verdict = REVIEW
-            reasons.append("backtest supera i criteri, ma la robustness non è stata "
-                           "eseguita: non promuovibile ad APPROVE (gate obbligatorio)")
+            reasons.append("backtest passes the criteria, but robustness was not run: "
+                           "not promotable to APPROVE (mandatory gate)")
         elif not robustness_ok:
             verdict = REJECT
             for ck in rob_checks:
                 if not ck.passed:
-                    reasons.append("robustness fallita: " + ck.describe())
+                    reasons.append("robustness failed: " + ck.describe())
         else:
             verdict = APPROVE
-            reasons.append("tutti i criteri backtest + gate robustness superati")
+            reasons.append("all backtest criteria + robustness gate passed")
 
         result = AnalysisResult(
             verdict=verdict, score=score, robustness_evaluated=robustness_evaluated,
@@ -191,18 +191,18 @@ class ResultEvaluator:
         client = make_client(self.api_key, timeout_seconds=120)
         meta = (backtest or {}).get("metadata", {})
         system = (
-            "Sei un risk officer di prop firm. Ti do il verdetto DETERMINISTICO già "
-            "calcolato (non ribaltarlo) e i dati. Spiega in modo critico e sintetico "
-            "PERCHÉ, elenca punti forti, rischi e (se REVIEW) cosa manca. Non essere "
-            "ottimista per default."
+            "You are a prop firm risk officer. I give you the already-computed "
+            "DETERMINISTIC verdict (do not overturn it) and the data. Explain WHY "
+            "critically and concisely, list strengths, risks and (if REVIEW) what's "
+            "missing. Do not be optimistic by default."
         )
         user = (
-            f"VERDETTO (fisso): {result.verdict} | score {result.score}\n"
-            f"Strategia: {meta.get('strategy')} su {meta.get('symbols')} {meta.get('timeframe')}\n"
-            f"Finestra dati: {meta.get('data_start')} → {meta.get('data_end')}\n"
-            f"Check:\n" + "\n".join("  - " + ck.describe() for ck in result.checks) + "\n"
-            f"Motivi: {result.reasons}\n"
-            f"Robustness valutata: {result.robustness_evaluated} | "
+            f"VERDICT (fixed): {result.verdict} | score {result.score}\n"
+            f"Strategy: {meta.get('strategy')} on {meta.get('symbols')} {meta.get('timeframe')}\n"
+            f"Data window: {meta.get('data_start')} → {meta.get('data_end')}\n"
+            f"Checks:\n" + "\n".join("  - " + ck.describe() for ck in result.checks) + "\n"
+            f"Reasons: {result.reasons}\n"
+            f"Robustness evaluated: {result.robustness_evaluated} | "
             f"MC prop_pass: {result.monte_carlo_confidence}\n"
         )
         return call_with_retry(client, model=self.model, max_tokens=800,

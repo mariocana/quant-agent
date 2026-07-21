@@ -64,48 +64,48 @@ class ResearchContext:
         return cls(strategies, inventory, configs, history or [], symbols)
 
 
-SYSTEM_PROMPT = """Sei un quantitative researcher senior in un prop firm. Il tuo
-compito NON è scrivere codice: è decidere il PROSSIMO esperimento da lanciare,
-scegliendo tra strumenti che già esistono.
+SYSTEM_PROMPT = """You are a senior quantitative researcher at a prop firm. Your
+job is NOT to write code: it is to decide the NEXT experiment to run, choosing
+among tools that already exist.
 
-Ricevi: le strategie disponibili (con le chiavi di config modificabili), i dati
-realmente presenti (simbolo + timeframe + span), e lo storico recente con i
-verdetti. Devi proporre esperimenti ESEGUIBILI e SENSATI.
+You receive: the available strategies (with their tunable config keys), the data
+actually present (symbol + timeframe + span), and the recent history with its
+verdicts. You must propose RUNNABLE and SENSIBLE experiments.
 
-Regole ferree:
-- Usa SOLO strategie dall'elenco fornito.
-- Usa SOLO coppie (symbol, timeframe) presenti nell'inventory.
-- Una strategia ESISTENTE va usata SOLO su un simbolo che DICHIARA (vedi symbols=...).
-  Non accoppiare una strategia a un simbolo fuori dai suoi.
-- Nei params usa SOLO chiavi presenti nella config di QUELLA strategia.
-- Impara dallo storico: non ri-testare identiche combo già REJECTed; su combo
-  REVIEW/promettenti prova variazioni di parametri; esplora simboli/TF non ancora
-  coperti.
-- Preferisci esperimenti con una tesi chiara (regime, timeframe, parametro).
+Hard rules:
+- Use ONLY strategies from the provided list.
+- Use ONLY (symbol, timeframe) pairs present in the inventory.
+- An EXISTING strategy must be used ONLY on a symbol it DECLARES (see symbols=...).
+  Do not pair a strategy with a symbol outside its own.
+- In params use ONLY keys present in THAT strategy's config.
+- Learn from history: do not re-test identical combos already REJECTed; on
+  REVIEW/promising combos try parameter variations; explore symbols/TFs not yet
+  covered.
+- Prefer experiments with a clear thesis (regime, timeframe, parameter).
 
-Le "strategie disponibili" sono SOLO quelle generate dall'agente (AI_*). Se la
-lista è vuota, DEVI proporre esperimenti di tipo (B) per crearne di nuove.
+The "available strategies" are ONLY those the agent generated (AI_*). If the list
+is empty, you MUST propose type (B) experiments to create new ones.
 
-Rispondi SOLO con un array JSON (nessun testo attorno). Due tipi di elemento:
+Reply ONLY with a JSON array (no surrounding text). Two element types:
 
-A) Esperimento su strategia ESISTENTE:
+A) Experiment on an EXISTING strategy:
 {
-  "strategy": "NOME_ESATTO_DAL_LISTA",
-  "symbol": "SIMBOLO_ESATTO",
-  "timeframe": "TF_ESATTO",
-  "params": {"chiave": valore},   // opzionale; {} se usi i default
-  "rationale": "1-2 frasi"
+  "strategy": "EXACT_NAME_FROM_LIST",
+  "symbol": "EXACT_SYMBOL",
+  "timeframe": "EXACT_TF",
+  "params": {"key": value},       // optional; {} to use defaults
+  "rationale": "1-2 sentences"
 }
 
-B) Strategia NUOVA da scrivere (solo se nessuna esistente è adatta al regime):
+B) NEW strategy to write (only if no existing one suits the regime):
 {
-  "strategy": "tipo_breve",        // hint di tipo, es. "mean_reversion"
-  "symbol": "SIMBOLO_ESATTO",      // deve esistere nell'inventory
-  "timeframe": "TF_ESATTO",
-  "author_brief": "descrizione dell'ipotesi/logica da implementare (2-4 frasi)",
-  "rationale": "perché serve una strategia nuova qui"
+  "strategy": "short_type",        // type hint, e.g. "mean_reversion"
+  "symbol": "EXACT_SYMBOL",        // must exist in the inventory
+  "timeframe": "EXACT_TF",
+  "author_brief": "description of the hypothesis/logic to implement (2-4 sentences)",
+  "rationale": "why a new strategy is needed here"
 }
-Preferisci (A). Usa (B) con parsimonia."""
+Prefer (A). Use (B) sparingly."""
 
 
 class StrategyResearcher:
@@ -208,7 +208,7 @@ class StrategyResearcher:
                 bits.append(f"params={keys}")
             strat_lines.append(f"  - {s}" + (f": {', '.join(bits)}" if bits else ""))
         if not strat_lines:
-            strat_lines = ["  (nessuna strategia AI ancora — proponi author_new per crearne)"]
+            strat_lines = ["  (no AI strategy yet — propose author_new to create some)"]
         inv_lines = [
             f"  - {r['symbol']} {r['timeframe']} (table={r['table']}, "
             f"{r.get('bars','?')} bars, {r.get('start','?')}→{r.get('end','?')})"
@@ -218,7 +218,7 @@ class StrategyResearcher:
             f"  - {h.get('strategy')}/{h.get('symbol')}/{h.get('timeframe')} "
             f"params={h.get('params') or {}} -> {h.get('verdict')} (score {h.get('score')})"
             for h in (ctx.history or [])[-15:]
-        ] or ["  (nessuno)"]
+        ] or ["  (none)"]
 
         # combos (strategy/symbol/tf) that ERRORed recently — broken strategy OR
         # a symbol without data/spec. Avoid the COMBO, not the whole strategy, so
@@ -226,15 +226,15 @@ class StrategyResearcher:
         errored = sorted({f"{h.get('strategy')}/{h.get('symbol')}/{h.get('timeframe')}"
                           for h in (ctx.history or [])[-25:]
                           if h.get("verdict") == "ERROR" and h.get("strategy")})
-        avoid = (f"\n⚠️ COMBO DA EVITARE (ERROR di recente — strategia rotta o simbolo "
-                 f"senza dati/spec): {errored}\n" if errored else "")
+        avoid = (f"\n⚠️ COMBOS TO AVOID (recent ERROR — broken strategy or symbol "
+                 f"without data/spec): {errored}\n" if errored else "")
 
         return (
-            f"STRATEGIE DISPONIBILI:\n" + "\n".join(strat_lines) + "\n\n"
-            f"DATI DISPONIBILI (inventory gold):\n" + "\n".join(inv_lines) + "\n"
+            f"AVAILABLE STRATEGIES:\n" + "\n".join(strat_lines) + "\n\n"
+            f"AVAILABLE DATA (gold inventory):\n" + "\n".join(inv_lines) + "\n"
             + avoid + "\n"
-            f"STORICO RECENTE:\n" + "\n".join(hist_lines) + "\n\n"
-            f"Proponi {n} esperimento/i. Array JSON, nient'altro."
+            f"RECENT HISTORY:\n" + "\n".join(hist_lines) + "\n\n"
+            f"Propose {n} experiment(s). JSON array, nothing else."
         )
 
     def _complete(self, system: str, user: str) -> str:

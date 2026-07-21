@@ -12,8 +12,8 @@ Run with:
 Configure config.yaml first (tools:, validation_criteria:, robustness_gate:,
 claude:, orchestrator:).
 
-Note: user ideas approved in the dashboard (status=approved_for_dev) are NOT yet
-turned into strategies — that needs StrategyAuthor (next), so they wait.
+User ideas approved in the dashboard (status=approved_for_dev) are turned into
+strategies each cycle by StrategyAuthor (see _process_ideas).
 """
 import sys
 from datetime import datetime, timedelta, timezone

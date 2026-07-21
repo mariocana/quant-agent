@@ -76,3 +76,5 @@ config.yaml
 logs/
 # Generated experiment outcomes (research_cli / orchestrator)
 experiment_results/
+# Generated SQLite DB (created at runtime by the orchestrator/dashboard)
+db/*.db

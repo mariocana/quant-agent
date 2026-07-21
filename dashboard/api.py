@@ -1,10 +1,10 @@
 """
-Dashboard web per monitorare il sistema e approvare candidati.
+Web dashboard to monitor the system and approve candidates.
 
-Avvia con:
+Run with:
     uvicorn dashboard.api:app --host 0.0.0.0 --port 8000
 
-Apri http://localhost:8000
+Open http://localhost:8000
 """
 import sys
 from pathlib import Path
@@ -72,22 +72,22 @@ pre { background: #000814; padding: 12px; border-radius: 6px; font-size: 11px; o
 </head>
 <body>
 <h1>◈ Quant Agent Dashboard</h1>
-<div class="subtitle"><span class="live-dot"></span>Sistema operativo · auto-refresh ogni 30s · <a href="/ideas" style="color:#00d4ff; text-decoration:none;">💡 Submit Idea →</a></div>
+<div class="subtitle"><span class="live-dot"></span>System live · auto-refresh every 30s · <a href="/ideas" style="color:#00d4ff; text-decoration:none;">💡 Submit Idea →</a></div>
 
 <div id="stats" class="grid"></div>
 
 <div class="section">
-<h2>🎯 Candidati in attesa di approvazione</h2>
+<h2>🎯 Candidates awaiting approval</h2>
 <div id="candidates"></div>
 </div>
 
 <div class="section">
-<h2>📊 Backtest recenti</h2>
+<h2>📊 Recent backtests</h2>
 <div id="backtests"></div>
 </div>
 
 <div class="section">
-<h2>🔄 Ultimi cicli</h2>
+<h2>🔄 Recent cycles</h2>
 <div id="cycles"></div>
 </div>
 
@@ -95,17 +95,17 @@ pre { background: #000814; padding: 12px; border-radius: 6px; font-size: 11px; o
 async function load() {
   const stats = await fetch('/api/stats').then(r => r.json());
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="stat-label">Strategie totali</div><div class="stat-value">${stats.total_strategies}</div></div>
-    <div class="stat"><div class="stat-label">Backtest eseguiti</div><div class="stat-value">${stats.total_backtests}</div></div>
-    <div class="stat"><div class="stat-label">Candidati attivi</div><div class="stat-value">${stats.pending_candidates}</div></div>
-    <div class="stat"><div class="stat-label">Cicli completati</div><div class="stat-value">${stats.total_cycles}</div></div>
+    <div class="stat"><div class="stat-label">Total strategies</div><div class="stat-value">${stats.total_strategies}</div></div>
+    <div class="stat"><div class="stat-label">Backtests run</div><div class="stat-value">${stats.total_backtests}</div></div>
+    <div class="stat"><div class="stat-label">Active candidates</div><div class="stat-value">${stats.pending_candidates}</div></div>
+    <div class="stat"><div class="stat-label">Cycles completed</div><div class="stat-value">${stats.total_cycles}</div></div>
   `;
   
   const cands = await fetch('/api/candidates').then(r => r.json());
   document.getElementById('candidates').innerHTML = cands.length === 0
-    ? '<div class="empty">Nessun candidato in attesa. Il sistema sta cercando…</div>'
+    ? '<div class="empty">No candidates awaiting. The system is searching…</div>'
     : `<table><thead><tr>
-        <th>Strategia</th><th>Profilo</th><th>Symbol</th><th>Score</th><th>PF</th><th>Sharpe</th><th>Max DD</th><th>WF</th><th>Verdetto</th><th>Azioni</th>
+        <th>Strategy</th><th>Profile</th><th>Symbol</th><th>Score</th><th>PF</th><th>Sharpe</th><th>Max DD</th><th>WF</th><th>Verdict</th><th>Actions</th>
       </tr></thead><tbody>${cands.map(c => `
         <tr>
           <td><strong>${c.ea_name}</strong></td>
@@ -118,14 +118,14 @@ async function load() {
           <td>${c.wf_score != null ? c.wf_score.toFixed(2) : '—'}</td>
           <td class="verdict-${c.verdict}">${c.verdict}</td>
           <td>
-            <button class="btn btn-approve" onclick="approve(${c.id})">Approva</button>
-            <button class="btn btn-reject" onclick="reject(${c.id})">Rifiuta</button>
+            <button class="btn btn-approve" onclick="approve(${c.id})">Approve</button>
+            <button class="btn btn-reject" onclick="reject(${c.id})">Reject</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
   
   const bts = await fetch('/api/backtests?limit=10').then(r => r.json());
-  document.getElementById('backtests').innerHTML = bts.length === 0 ? '<div class="empty">Nessun backtest ancora.</div>' :
-    `<table><thead><tr><th>Strategia</th><th>Symbol</th><th>PF</th><th>Sharpe</th><th>Max DD</th><th>Trades</th><th>Pass</th></tr></thead><tbody>
+  document.getElementById('backtests').innerHTML = bts.length === 0 ? '<div class="empty">No backtests yet.</div>' :
+    `<table><thead><tr><th>Strategy</th><th>Symbol</th><th>PF</th><th>Sharpe</th><th>Max DD</th><th>Trades</th><th>Pass</th></tr></thead><tbody>
     ${bts.map(b => `<tr>
       <td>${b.strategy_name}</td><td>${b.symbol}</td>
       <td>${b.profit_factor.toFixed(2)}</td><td>${b.sharpe.toFixed(2)}</td>
@@ -135,9 +135,9 @@ async function load() {
   
   const cycles = await fetch('/api/cycles?limit=5').then(r => r.json());
   document.getElementById('cycles').innerHTML = `<table><thead><tr>
-    <th>#</th><th>Inizio</th><th>Stato</th><th>Generate</th><th>Backtest</th><th>Candidati</th>
+    <th>#</th><th>Started</th><th>Status</th><th>Proposed</th><th>Backtests</th><th>Candidates</th>
   </tr></thead><tbody>${cycles.map(c => `<tr>
-    <td>#${c.id}</td><td>${new Date(c.started_at).toLocaleString('it-IT')}</td>
+    <td>#${c.id}</td><td>${new Date(c.started_at).toLocaleString('en-GB')}</td>
     <td>${c.status}</td><td>${c.generated}</td><td>${c.backtested}</td>
     <td><strong>${c.candidates}</strong></td>
   </tr>`).join('')}</tbody></table>`;
@@ -304,10 +304,10 @@ async def submit_idea(
         content = text
         source_type = "text"
     else:
-        raise HTTPException(400, "Fornisci text, file o url")
+        raise HTTPException(400, "Provide text, file or url")
     
     if len(content.strip()) < 50:
-        raise HTTPException(400, "Contenuto troppo breve (min 50 caratteri)")
+        raise HTTPException(400, "Content too short (min 50 characters)")
     
     # Evaluate
     prop_firm = config.get("prop.target_firm", "ftmo")
@@ -417,7 +417,7 @@ def approve_idea_for_pipeline(idea_id: int):
         if not idea:
             raise HTTPException(404)
         if not idea.structured_strategy:
-            raise HTTPException(400, "Idea non strutturabile")
+            raise HTTPException(400, "Idea cannot be structured")
         
         idea.status = "approved_for_dev"
         idea.user_decided_at = datetime.now(timezone.utc)
@@ -426,7 +426,7 @@ def approve_idea_for_pipeline(idea_id: int):
         # TODO: trigger orchestrator a processare questa idea nel prossimo ciclo
         # Per ora la marchiamo, l'orchestrator picka le ideas approvate
         
-        return {"ok": True, "message": "Idea aggiunta alla pipeline. Sarà processata al prossimo ciclo."}
+        return {"ok": True, "message": "Idea queued. It will be processed on the next cycle."}
     finally:
         s.close()
 
@@ -510,45 +510,45 @@ input:focus, textarea:focus { outline: none; border-color: #00d4ff66; }
 <div class="container">
   <a class="nav-back" href="/">← Dashboard</a>
   <h1>💡 Submit Trading Idea</h1>
-  <div class="subtitle">L'agente analizzerà la tua idea, farà devil's advocate, e ti dirà se vale la pena svilupparla in una strategia.</div>
+  <div class="subtitle">The agent will analyze your idea, play devil's advocate, and tell you whether it's worth developing into a strategy.</div>
 
   <div class="tab-bar">
-    <div class="tab active" onclick="showTab('text', this)">📝 Testo</div>
+    <div class="tab active" onclick="showTab('text', this)">📝 Text</div>
     <div class="tab" onclick="showTab('file', this)">📎 File</div>
     <div class="tab" onclick="showTab('url', this)">🔗 URL</div>
   </div>
 
   <form id="ideaForm" enctype="multipart/form-data">
     <div class="input-section">
-      <label>Titolo (opzionale)</label>
-      <input type="text" name="title" placeholder="Es: Breakout Asia su EURUSD durante volatilità bassa">
+      <label>Title (optional)</label>
+      <input type="text" name="title" placeholder="e.g. Asia breakout on EURUSD during low volatility">
 
       <div id="section-text" class="section-input active">
-        <label>La tua idea / ipotesi</label>
-        <textarea name="text" placeholder="Descrivi la tua idea in modo discorsivo. Anche solo appunti grezzi vanno bene — l'agente estrarrà la struttura."></textarea>
+        <label>Your idea / hypothesis</label>
+        <textarea name="text" placeholder="Describe your idea freely. Even rough notes are fine — the agent will extract the structure."></textarea>
       </div>
 
       <div id="section-file" class="section-input">
-        <label>Carica file (.txt, .md, .pdf, .docx, .png, .jpg)</label>
+        <label>Upload file (.txt, .md, .pdf, .docx, .png, .jpg)</label>
         <input type="file" name="file" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg">
       </div>
 
       <div id="section-url" class="section-input">
-        <label>URL articolo / paper</label>
+        <label>Article / paper URL</label>
         <input type="url" name="url" placeholder="https://...">
       </div>
 
-      <label>Note aggiuntive (contesto, perché ti interessa)</label>
-      <textarea name="notes" style="min-height:80px" placeholder="Es: l'ho letto su un paper, ma voglio sapere se regge sul forex moderno..."></textarea>
+      <label>Additional notes (context, why it interests you)</label>
+      <textarea name="notes" style="min-height:80px" placeholder="e.g. I read it in a paper, but I want to know if it holds on modern forex..."></textarea>
 
-      <button type="submit" class="btn" id="submitBtn">🧠 Analizza Idea</button>
+      <button type="submit" class="btn" id="submitBtn">🧠 Analyze Idea</button>
     </div>
   </form>
 
   <div id="result"></div>
 
   <div class="history">
-    <h2 style="font-size:14px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Idee precedenti</h2>
+    <h2 style="font-size:14px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Previous ideas</h2>
     <div id="history-list"></div>
   </div>
 </div>
@@ -568,7 +568,7 @@ document.getElementById('ideaForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Analizzando...';
+  btn.innerHTML = '<span class="spinner"></span> Analyzing...';
   
   const fd = new FormData(e.target);
   
@@ -584,11 +584,11 @@ document.getElementById('ideaForm').addEventListener('submit', async (e) => {
     showResult(data);
     loadHistory();
   } catch (err) {
-    document.getElementById('result').innerHTML = `<div class="result"><div style="color:#f87171">Errore: ${err.message}</div></div>`;
+    document.getElementById('result').innerHTML = `<div class="result"><div style="color:#f87171">Error: ${err.message}</div></div>`;
   }
-  
+
   btn.disabled = false;
-  btn.innerHTML = '🧠 Analizza Idea';
+  btn.innerHTML = '🧠 Analyze Idea';
 });
 
 function showResult(data) {
@@ -598,42 +598,42 @@ function showResult(data) {
       <div class="verdict verdict-${verdict}">${verdict.replace(/_/g, ' ')}</div>
       
       <div style="color:#cbd5e1; font-size:14px; line-height:1.6; margin-bottom:16px;">
-        <strong style="color:#00d4ff;">Idea estratta:</strong><br>
-        ${data.idea_extracted || '(nessuna)'}
+        <strong style="color:#00d4ff;">Extracted idea:</strong><br>
+        ${data.idea_extracted || '(none)'}
       </div>
-      
+
       <div class="scores">
         <div class="score-card">
-          <div class="score-label">Tradabilità</div>
+          <div class="score-label">Tradability</div>
           <div class="score-value">${data.tradability_score}/100</div>
         </div>
         <div class="score-card">
-          <div class="score-label">Completezza</div>
+          <div class="score-label">Completeness</div>
           <div class="score-value">${data.completeness_score}/100</div>
         </div>
       </div>
-      
+
       ${data.missing_elements && data.missing_elements.length ? `
         <div style="margin-bottom:14px;">
-          <strong style="color:#fbbf24; font-size:12px;">⚠️ Elementi mancanti:</strong>
+          <strong style="color:#fbbf24; font-size:12px;">⚠️ Missing elements:</strong>
           <ul style="margin:6px 0 0 20px; color:#cbd5e1; font-size:13px;">
             ${data.missing_elements.map(e => `<li>${e}</li>`).join('')}
           </ul>
         </div>` : ''}
       
-      <div class="review-text">${data.critical_review || '(nessuna review)'}</div>
-      
+      <div class="review-text">${data.critical_review || '(no review)'}</div>
+
       ${data.proceed_to_codegen ? `
         <div class="actions">
           <button class="btn" onclick="approveForPipeline(${data.id})">
-            ✅ Manda alla Pipeline (genera strategia + backtest)
+            ✅ Send to Pipeline (author strategy + backtest)
           </button>
           <button class="btn btn-secondary" onclick="rejectIdea(${data.id})">
-            Archivia
+            Archive
           </button>
         </div>` : `
         <div style="color:#94a3b8; font-size:12px; margin-top:12px;">
-          Idea archiviata. Modifica/integra e ri-sottometti se vuoi un nuovo tentativo.
+          Idea archived. Edit/expand and resubmit for another attempt.
         </div>`}
     </div>
   `;
@@ -642,7 +642,7 @@ function showResult(data) {
 }
 
 async function approveForPipeline(id) {
-  if (!confirm('Mandare alla pipeline? L\\'idea sarà sviluppata in una strategia e backtestata.')) return;
+  if (!confirm('Send to the pipeline? The idea will be developed into a strategy and backtested.')) return;
   const r = await fetch(`/api/ideas/${id}/approve_for_pipeline`, { method: 'POST' });
   const data = await r.json();
   alert(data.message || 'OK');
@@ -659,17 +659,17 @@ async function loadHistory() {
   const r = await fetch('/api/ideas?limit=10');
   const items = await r.json();
   const html = items.length === 0
-    ? '<div style="color:#475569; font-size:13px; padding:20px; text-align:center;">Nessuna idea ancora sottomessa.</div>'
+    ? '<div style="color:#475569; font-size:13px; padding:20px; text-align:center;">No ideas submitted yet.</div>'
     : items.map(i => `
         <div class="history-item" onclick="loadIdea(${i.id})">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
               <span class="tag">${i.source_type}</span>
               <span class="tag verdict-${i.verdict}" style="background:none; color:inherit; border:1px solid;">${i.verdict || '?'}</span>
-              <strong style="color:#cbd5e1;">${i.title || 'Senza titolo'}</strong>
+              <strong style="color:#cbd5e1;">${i.title || 'Untitled'}</strong>
             </div>
             <div style="color:#64748b; font-size:11px;">
-              Score: ${i.tradability_score} · ${new Date(i.created_at).toLocaleString('it-IT')}
+              Score: ${i.tradability_score} · ${new Date(i.created_at).toLocaleString('en-GB')}
             </div>
           </div>
         </div>

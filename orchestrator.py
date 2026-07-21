@@ -86,6 +86,7 @@ class Orchestrator:
         self.loop = ResearchLoop(
             self.researcher, self.runner, self.sea,
             n_per_cycle=self.config.get("orchestrator.max_experiments_per_cycle", 2),
+            only_ai_strategies=self.config.get("orchestrator.only_ai_strategies", True),
             on_outcome=self._persist_outcome,
         )
         logger.info("✅ Orchestrator ready")

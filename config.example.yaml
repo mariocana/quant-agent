@@ -39,6 +39,10 @@ database:
 orchestrator:
   cycle_hours: 4                    # ogni quante ore parte un ciclo
   max_experiments_per_cycle: 2      # quanti esperimenti propone/esegue per ciclo
+  # true (default): l'agente lavora SOLO sulle strategie che genera lui (AI_*);
+  #   se non ce ne sono, le crea (author_new). Non tocca mai le tue strategie.
+  # false: SOLO per test/collaudo, può girare anche sulle strategie esistenti.
+  only_ai_strategies: true
 
 # Usato dall'idea evaluator (dashboard) per contestualizzare le regole prop.
 prop:

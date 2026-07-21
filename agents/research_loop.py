@@ -49,6 +49,7 @@ class ResearchLoop:
         sea=None,
         *,
         n_per_cycle: int = 1,
+        only_ai_strategies: bool = True,
         out_dir: str = "experiment_results",
         history_path: Optional[str] = None,
         on_candidate: Optional[Callable[[ExperimentOutcome], None]] = None,
@@ -59,6 +60,7 @@ class ResearchLoop:
         self.runner = runner
         self.sea = sea
         self.n_per_cycle = n_per_cycle
+        self.only_ai_strategies = only_ai_strategies
         self.out_dir = Path(out_dir)
         self.history_path = Path(history_path) if history_path else (self.out_dir / "history.jsonl")
         self.on_candidate = on_candidate
@@ -110,6 +112,8 @@ class ResearchLoop:
         if self._context_builder:
             return self._context_builder(list(self.history))
         strategies = self.runner.algo.list_strategies()
+        if self.only_ai_strategies:
+            strategies = [s for s in strategies if s.upper().startswith("AI_")]
         inventory = [r for r in self.sea.list_available()
                      if not str(r.get("symbol", "")).startswith("(error")]
         if self._configs is None:                       # introspect once, reuse

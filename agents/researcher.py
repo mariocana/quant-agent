@@ -40,10 +40,15 @@ class ResearchContext:
     strategy_symbols: dict[str, list] = field(default_factory=dict) # strategy -> declared symbols()
 
     @classmethod
-    def build(cls, algo, sea, history=None, with_configs=True) -> "ResearchContext":
-        """Gather the live context from the adapters."""
+    def build(cls, algo, sea, history=None, with_configs=True,
+              only_ai=True) -> "ResearchContext":
+        """Gather the live context from the adapters. only_ai restricts the
+        existing-strategy pool to AI-generated ones (name prefix AI_), so the
+        agent never experiments on the user's own strategies."""
         from adapters.env_bridge import ToolError
         strategies = algo.list_strategies()
+        if only_ai:
+            strategies = [s for s in strategies if s.upper().startswith("AI_")]
         inventory = [r for r in sea.list_available()
                      if not str(r.get("symbol", "")).startswith("(error")]
         configs: dict[str, dict] = {}
@@ -77,6 +82,9 @@ Regole ferree:
   REVIEW/promettenti prova variazioni di parametri; esplora simboli/TF non ancora
   coperti.
 - Preferisci esperimenti con una tesi chiara (regime, timeframe, parametro).
+
+Le "strategie disponibili" sono SOLO quelle generate dall'agente (AI_*). Se la
+lista è vuota, DEVI proporre esperimenti di tipo (B) per crearne di nuove.
 
 Rispondi SOLO con un array JSON (nessun testo attorno). Due tipi di elemento:
 
@@ -199,6 +207,8 @@ class StrategyResearcher:
             if keys:
                 bits.append(f"params={keys}")
             strat_lines.append(f"  - {s}" + (f": {', '.join(bits)}" if bits else ""))
+        if not strat_lines:
+            strat_lines = ["  (nessuna strategia AI ancora — proponi author_new per crearne)"]
         inv_lines = [
             f"  - {r['symbol']} {r['timeframe']} (table={r['table']}, "
             f"{r.get('bars','?')} bars, {r.get('start','?')}→{r.get('end','?')})"

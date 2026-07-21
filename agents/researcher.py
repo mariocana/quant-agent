@@ -37,6 +37,7 @@ class ResearchContext:
     inventory: list[dict]                        # datasea gold rows
     default_configs: dict[str, dict] = field(default_factory=dict)  # strategy -> default_config
     history: list[dict] = field(default_factory=list)               # recent experiment summaries
+    strategy_symbols: dict[str, list] = field(default_factory=dict) # strategy -> declared symbols()
 
     @classmethod
     def build(cls, algo, sea, history=None, with_configs=True) -> "ResearchContext":
@@ -46,13 +47,16 @@ class ResearchContext:
         inventory = [r for r in sea.list_available()
                      if not str(r.get("symbol", "")).startswith("(error")]
         configs: dict[str, dict] = {}
+        symbols: dict[str, list] = {}
         if with_configs:
             for s in strategies:
                 try:
-                    configs[s] = algo.get_default_config(s)
+                    info = algo.get_strategy_info(s)
+                    configs[s] = info.get("default_config", {})
+                    symbols[s] = info.get("symbols", [])
                 except ToolError:
-                    configs[s] = {}
-        return cls(strategies, inventory, configs, history or [])
+                    configs[s], symbols[s] = {}, []
+        return cls(strategies, inventory, configs, history or [], symbols)
 
 
 SYSTEM_PROMPT = """Sei un quantitative researcher senior in un prop firm. Il tuo
@@ -66,6 +70,8 @@ verdetti. Devi proporre esperimenti ESEGUIBILI e SENSATI.
 Regole ferree:
 - Usa SOLO strategie dall'elenco fornito.
 - Usa SOLO coppie (symbol, timeframe) presenti nell'inventory.
+- Una strategia ESISTENTE va usata SOLO su un simbolo che DICHIARA (vedi symbols=...).
+  Non accoppiare una strategia a un simbolo fuori dai suoi.
 - Nei params usa SOLO chiavi presenti nella config di QUELLA strategia.
 - Impara dallo storico: non ri-testare identiche combo già REJECTed; su combo
   REVIEW/promettenti prova variazioni di parametri; esplora simboli/TF non ancora
@@ -155,6 +161,14 @@ class StrategyResearcher:
             logger.warning(f"   dropped: unknown strategy {d.get('strategy')!r}")
             return None
 
+        # symbol-awareness: an existing strategy runs only on symbols it declares.
+        # Avoids nonsensical pairings (e.g. a NASDAQ strategy on BTCUSD) that crash
+        # or produce garbage. Only enforced when we know the declared symbols.
+        declared = ctx.strategy_symbols.get(strat)
+        if declared and symbol not in declared:
+            logger.warning(f"   dropped: {symbol} not in {strat} symbols {declared}")
+            return None
+
         params = d.get("params") or None
         if params and isinstance(params, dict):
             cfg = ctx.default_configs.get(strat)
@@ -173,7 +187,13 @@ class StrategyResearcher:
         strat_lines = []
         for s in ctx.strategies:
             keys = list((ctx.default_configs.get(s) or {}).keys())
-            strat_lines.append(f"  - {s}: params={keys}" if keys else f"  - {s}")
+            syms = ctx.strategy_symbols.get(s) or []
+            bits = []
+            if syms:
+                bits.append(f"symbols={syms}")
+            if keys:
+                bits.append(f"params={keys}")
+            strat_lines.append(f"  - {s}" + (f": {', '.join(bits)}" if bits else ""))
         inv_lines = [
             f"  - {r['symbol']} {r['timeframe']} (table={r['table']}, "
             f"{r.get('bars','?')} bars, {r.get('start','?')}→{r.get('end','?')})"

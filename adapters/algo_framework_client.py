@@ -23,7 +23,7 @@ except ModuleNotFoundError:  # pragma: no cover
     logger = logging.getLogger("adapters.algo_framework_client")
 
 _STRAT_PREFIX = "STRATEGIES_JSON:"
-_DEFCFG_PREFIX = "DEFCFG:"
+_SINFO_PREFIX = "SINFO:"
 
 
 class AlgoFrameworkClient:
@@ -109,21 +109,31 @@ class AlgoFrameworkClient:
 
     def get_default_config(self, strategy: str) -> dict:
         """Introspect a strategy's default_config (the valid keys for --params)."""
+        return self.get_strategy_info(strategy).get("default_config", {})
+
+    def get_strategy_info(self, strategy: str) -> dict:
+        """Introspect a strategy: {default_config, symbols, timeframe}. symbols() /
+        timeframe() are called defensively (some may touch MT5)."""
         code = (
             "import sys, json; sys.path.insert(0, '.'); "
             "from core.registry import StrategyRegistry as R; "
             "R.discover('strategies'); s = R.get(%r); "
-            "print('%s' + json.dumps(getattr(s, 'default_config', {})))"
-            % (strategy, _DEFCFG_PREFIX)
+            "cfg = getattr(s, 'default_config', {}) or {}\n"
+            "try: syms = list(s.symbols())\n"
+            "except Exception: syms = []\n"
+            "try: tf = s.timeframe()\n"
+            "except Exception: tf = None\n"
+            "print('%s' + json.dumps({'default_config': cfg, 'symbols': syms, 'timeframe': tf}))"
+            % (strategy, _SINFO_PREFIX)
         )
         res = self._run(["-c", code], timeout=120)
         if not res.ok:
-            raise ToolError(f"get_default_config({strategy}) failed:\n{res.stderr[-2000:]}")
+            raise ToolError(f"get_strategy_info({strategy}) failed:\n{res.stderr[-2000:]}")
         for line in res.stdout.splitlines():
             s = line.strip()
-            if s.startswith(_DEFCFG_PREFIX):
-                return json.loads(s[len(_DEFCFG_PREFIX):])
-        raise ToolError(f"could not parse default_config from:\n{res.stdout[-2000:]}")
+            if s.startswith(_SINFO_PREFIX):
+                return json.loads(s[len(_SINFO_PREFIX):])
+        raise ToolError(f"could not parse strategy info from:\n{res.stdout[-2000:]}")
 
     def run_backtest(self, strategy, symbol=None, timeframe=None, params=None,
                      enforce_prop=False, out_json=None, timeout=None, table=None) -> dict:

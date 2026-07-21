@@ -65,6 +65,7 @@ class ResearchLoop:
         self.on_outcome = on_outcome
         self._context_builder = context_builder
         self._configs: Optional[dict] = None            # cached across cycles
+        self._symbols: Optional[dict] = None            # strategy -> declared symbols()
         self.cycle_count = 0
         self.history: list[dict] = self._load_history()
         logger.info(f"ResearchLoop ready — {len(self.history)} past experiments in history")
@@ -112,13 +113,16 @@ class ResearchLoop:
         inventory = [r for r in self.sea.list_available()
                      if not str(r.get("symbol", "")).startswith("(error")]
         if self._configs is None:                       # introspect once, reuse
-            self._configs = {}
+            self._configs, self._symbols = {}, {}
             for s in strategies:
                 try:
-                    self._configs[s] = self.runner.algo.get_default_config(s)
+                    info = self.runner.algo.get_strategy_info(s)
+                    self._configs[s] = info.get("default_config", {})
+                    self._symbols[s] = info.get("symbols", [])
                 except Exception:
-                    self._configs[s] = {}
-        return ResearchContext(strategies, inventory, self._configs, list(self.history))
+                    self._configs[s], self._symbols[s] = {}, []
+        return ResearchContext(strategies, inventory, self._configs,
+                               list(self.history), self._symbols)
 
     # ── persistence ───────────────────────────────────────────────────
     def _record(self, outcome: ExperimentOutcome):

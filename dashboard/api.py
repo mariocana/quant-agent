@@ -105,7 +105,7 @@ async function load() {
   document.getElementById('candidates').innerHTML = cands.length === 0
     ? '<div class="empty">Nessun candidato in attesa. Il sistema sta cercando…</div>'
     : `<table><thead><tr>
-        <th>EA</th><th>Profilo</th><th>Symbol</th><th>Score</th><th>PF</th><th>Sharpe</th><th>Max DD</th><th>WF</th><th>Verdetto</th><th>Azioni</th>
+        <th>Strategia</th><th>Profilo</th><th>Symbol</th><th>Score</th><th>PF</th><th>Sharpe</th><th>Max DD</th><th>WF</th><th>Verdetto</th><th>Azioni</th>
       </tr></thead><tbody>${cands.map(c => `
         <tr>
           <td><strong>${c.ea_name}</strong></td>
@@ -510,7 +510,7 @@ input:focus, textarea:focus { outline: none; border-color: #00d4ff66; }
 <div class="container">
   <a class="nav-back" href="/">← Dashboard</a>
   <h1>💡 Submit Trading Idea</h1>
-  <div class="subtitle">L'agente analizzerà la tua idea, farà devil's advocate, e ti dirà se vale la pena svilupparla in EA.</div>
+  <div class="subtitle">L'agente analizzerà la tua idea, farà devil's advocate, e ti dirà se vale la pena svilupparla in una strategia.</div>
 
   <div class="tab-bar">
     <div class="tab active" onclick="showTab('text', this)">📝 Testo</div>
@@ -626,7 +626,7 @@ function showResult(data) {
       ${data.proceed_to_codegen ? `
         <div class="actions">
           <button class="btn" onclick="approveForPipeline(${data.id})">
-            ✅ Manda alla Pipeline (genera EA + backtest)
+            ✅ Manda alla Pipeline (genera strategia + backtest)
           </button>
           <button class="btn btn-secondary" onclick="rejectIdea(${data.id})">
             Archivia
@@ -642,7 +642,7 @@ function showResult(data) {
 }
 
 async function approveForPipeline(id) {
-  if (!confirm('Mandare alla pipeline? L\\'idea sarà sviluppata in EA e backtestata.')) return;
+  if (!confirm('Mandare alla pipeline? L\\'idea sarà sviluppata in una strategia e backtestata.')) return;
   const r = await fetch(`/api/ideas/${id}/approve_for_pipeline`, { method: 'POST' });
   const data = await r.json();
   alert(data.message || 'OK');

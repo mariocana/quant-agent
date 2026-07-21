@@ -38,7 +38,7 @@ JSON_EXPORT_PREFIX = "JSON_EXPORT:"
 # failure as "skip/retry with different data", not "the strategy is bad".
 SETUP_MARKERS = (
     "Missing InstrumentSpec", "No data source", "Nessun dato", "Nessun dato caricato",
-    "Insufficient data", "Dati insufficienti",
+    "Insufficient data", "Dati insufficienti", "symbol_info", "not in symbol_info",
 )
 
 

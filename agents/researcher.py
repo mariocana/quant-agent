@@ -210,12 +210,14 @@ class StrategyResearcher:
             for h in (ctx.history or [])[-15:]
         ] or ["  (nessuno)"]
 
-        # strategies that crashed recently (ERROR) — likely broken; tell the LLM
-        # to avoid burning cycles on them.
-        errored = sorted({h.get("strategy") for h in (ctx.history or [])[-20:]
+        # combos (strategy/symbol/tf) that ERRORed recently — broken strategy OR
+        # a symbol without data/spec. Avoid the COMBO, not the whole strategy, so
+        # a strategy stays usable on other symbols.
+        errored = sorted({f"{h.get('strategy')}/{h.get('symbol')}/{h.get('timeframe')}"
+                          for h in (ctx.history or [])[-25:]
                           if h.get("verdict") == "ERROR" and h.get("strategy")})
-        avoid = (f"\n⚠️ STRATEGIE DA EVITARE (hanno dato ERROR di recente, probabilmente "
-                 f"rotte): {errored}\n" if errored else "")
+        avoid = (f"\n⚠️ COMBO DA EVITARE (ERROR di recente — strategia rotta o simbolo "
+                 f"senza dati/spec): {errored}\n" if errored else "")
 
         return (
             f"STRATEGIE DISPONIBILI:\n" + "\n".join(strat_lines) + "\n\n"
